@@ -10,13 +10,14 @@
   button { cursor: pointer; font-family: inherit; border: none; background: none; }
   input, select, textarea { font-family: inherit; font-size: 14px; }
 
-  .app { max-width: 500px; margin: 0 auto; background: #fff; min-height: 100vh; }
+  .app { max-width: 720px; margin: 0 auto; background: #fff; min-height: 100vh; }
 
   /* HEADER */
   .header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px 0; }
   .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .header h1 { font-size: 17px; font-weight: 700; }
-  .tabs { display: flex; overflow-x: auto; gap: 0; }
+  .tabs { display: flex; overflow-x: auto; gap: 0; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab { flex-shrink: 0; padding: 8px 12px; font-size: 12px; font-weight: 400; color: #888; border-bottom: 2.5px solid transparent; margin-bottom: -1px; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; cursor: pointer; }
   .tab.active { font-weight: 700; color: #111; border-bottom-color: #111; }
 
@@ -74,7 +75,9 @@
 
   /* WEEK PLANNER */
   .day-card { border: 1px solid #eee; border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
-  .day-header { padding: 7px 12px; background: #FAFAFA; border-bottom: 1px solid #eee; font-size: 13px; font-weight: 600; color: #333; }
+  .day-header { padding: 7px 12px; background: #FAFAFA; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .day-name { font-size: 13px; font-weight: 600; color: #333; }
+  .day-date { font-size: 11px; color: #aaa; font-weight: 400; }
   .day-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
   .day-row + .day-row { border-top: 1px solid #f5f5f5; }
   .day-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #bbb; width: 72px; flex-shrink: 0; font-weight: 600; }
@@ -115,6 +118,18 @@
   .mb12 { margin-bottom: 12px; }
   .mb16 { margin-bottom: 16px; }
   .storage-badge { font-size: 11px; color: #B45309; background: #FEF3C7; padding: 2px 7px; border-radius: 10px; }
+  .btn-green { background: #DCFCE7; color: #166534; border: none; font-weight: 600; }
+  .cat-hdr { padding: 7px 12px; background: #F8F8F8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #666; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ddd; border-top-color: #333; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (min-width: 640px) {
+    .app { border-left: 1px solid #eee; border-right: 1px solid #eee; }
+    .content { padding: 24px 32px 100px; }
+    .header { padding: 16px 32px 0; }
+    .header h1 { font-size: 20px; }
+    .tab { padding: 10px 16px; font-size: 13px; }
+    .recipe-grid { gap: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -135,6 +150,80 @@
 // ═══════════════════════════════════════════════════════
 const DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
 const UNITS = ["g","kg","ml","l","pz","cucchiai","cucchiaio","cucchiaino","qb"];
+
+const SHOP_CATS = [
+  {id:"varie",label:"🗂 Varie"},
+  {id:"cosmetici",label:"🧴 Cosmetici e igiene"},
+  {id:"giardino",label:"🌿 Giardino e animali"},
+  {id:"lavatrice",label:"🫧 Lavatrice e lavastoviglie"},
+  {id:"pasta",label:"🍝 Pasta e sughi"},
+  {id:"olio",label:"🫙 Olio e legumi"},
+  {id:"snack",label:"🍪 Patatine e biscotti"},
+  {id:"alcolici",label:"🍷 Alcolici"},
+  {id:"frigo",label:"🧊 Frigo"},
+  {id:"frutta",label:"🥦 Frutta e verdura"},
+  {id:"cereali",label:"🌾 Cereali integrali e frutta secca"},
+];
+
+const INGREDIENT_CAT = {
+  "orzo perlato":"pasta","orzo":"pasta","farro semiperlato":"pasta","farro":"pasta",
+  "pasta corta":"pasta","ditalini":"pasta","tubetti":"pasta",
+  "passata di pomodoro":"pasta","pomodori pelati":"pasta","concentrato di pomodoro":"pasta",
+  "brodo vegetale":"pasta","farina di polenta":"pasta","alloro":"pasta",
+  "olio evo":"olio","olio di sesamo tostato":"olio","olio di sesamo":"olio","olio di cocco":"olio",
+  "ceci cotti":"olio","ceci":"olio","lenticchie rosse":"olio","lenticchie nere":"olio",
+  "lenticchie nere cotte":"olio","fagioli borlotti cotti":"olio","fagioli borlotti":"olio",
+  "fagioli cannellini cotti":"olio","cannellini cotti":"olio","fagioli cannellini":"olio",
+  "aceto di mele":"olio","tahini":"olio","capperi":"olio","tamari":"olio","miso":"olio","salsa di soia":"olio",
+  "uova":"frigo","ricotta fresca":"frigo","ricotta di capra":"frigo","yogurt bianco naturale":"frigo",
+  "yogurt greco o bianco naturale":"frigo","feta":"frigo","tofu":"frigo","tempeh":"frigo","seitan":"frigo",
+  "salmone (tranci)":"frigo","salmone":"frigo","petto di pollo":"frigo","pollo":"frigo",
+  "latte":"frigo","latte vegetale":"frigo","latte di mandorla non zuccherato":"frigo","latte di mandorla":"frigo",
+  "burro chiarificato":"frigo","formaggio fresco o feta":"frigo","avocado maturo":"frigo","avocado":"frigo",
+  "asparagi":"frutta","piselli freschi o surgelati":"frutta","piselli":"frutta",
+  "cipollotti":"frutta","cipolla rossa":"frutta","cipolla":"frutta","aglio":"frutta",
+  "zucchine":"frutta","pomodorini":"frutta","melanzana":"frutta","peperoni misti":"frutta","peperoni":"frutta",
+  "fagiolini":"frutta","cavolo nero":"frutta","cavolo cappuccio":"frutta","broccoli":"frutta","broccoletti":"frutta",
+  "spinaci freschi":"frutta","spinaci":"frutta","funghi misti":"frutta","funghi":"frutta",
+  "zucca":"frutta","carote":"frutta","carota":"frutta","sedano":"frutta",
+  "fave fresche sgranate":"frutta","fave":"frutta","agretti":"frutta","sclopit/strigoli freschi":"frutta",
+  "patate":"frutta","mela":"frutta","banana matura":"frutta","banana":"frutta",
+  "limone":"frutta","frutti di bosco freschi o surgelati":"frutta","frutti di bosco":"frutta",
+  "frutta fresca di stagione":"frutta","frutta fresca":"frutta","castagne bollite":"frutta","castagne":"frutta",
+  "menta fresca":"frutta","basilico fresco":"frutta","timo fresco":"frutta","rosmarino fresco":"frutta",
+  "salvia fresca":"frutta","erba cipollina":"frutta","zenzero fresco":"frutta","carciofi":"frutta",
+  "verdure di stagione a scelta":"frutta","edamame sgranati surgelati":"frutta","edamame":"frutta",
+  "peperoncino":"frutta","rosmarino e timo":"frutta","menta e basilico freschi":"frutta",
+  "fiocchi di avena":"cereali","farina d'avena (o avena frullata)":"cereali","farina d'avena":"cereali",
+  "riso integrale":"cereali","riso venere":"cereali","riso":"cereali","quinoa":"cereali","miglio":"cereali","amaranto":"cereali",
+  "semi di chia":"cereali","semi di sesamo":"cereali","semi di lino macinati":"cereali","semi di lino":"cereali",
+  "semi di zucca":"cereali","semi di girasole":"cereali","noci":"cereali","mandorle":"cereali",
+  "granella di noci o mandorle":"cereali","granella di noci":"cereali","pane integrale":"cereali",
+  "estratto di vaniglia":"cereali","cannella":"cereali","noce moscata":"cereali",
+  "curcuma":"cereali","cumino in polvere":"cereali","cumino":"cereali","paprika affumicata":"cereali",
+  "succo di limone":"cereali",
+};
+
+function categorizeItem(name) {
+  const lower = name.toLowerCase().trim();
+  if (INGREDIENT_CAT[lower]) return INGREDIENT_CAT[lower];
+  for (const [key, cat] of Object.entries(INGREDIENT_CAT)) {
+    if (lower.includes(key) || key.includes(lower)) return cat;
+  }
+  return "varie";
+}
+
+function getWeekDates(offset) {
+  const today = new Date();
+  const dow = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + (offset || 0) * 7);
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
 const TAGS = {
   primavera: { dot:"#4A9B6F", label:"🌱 Primavera" },
   estate:    { dot:"#E07C3B", label:"☀️ Estate" },
@@ -205,6 +294,9 @@ let state = {
   deleteConfirm: null,
   editId: null,
   formData: null,
+  weekOffset: 0,
+  receiptLoading: false,
+  showApiKey: false,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -292,7 +384,7 @@ function generateShoppingList() {
   return Object.values(agg)
     .filter(i => !pset.has(i.name.toLowerCase().trim()))
     .sort((a,b) => a.name.localeCompare(b.name,"it"))
-    .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false}));
+    .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false, category:categorizeItem(i.name)}));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -357,6 +449,8 @@ function renderColazioni() {
 
 function renderSettimana() {
   const filledDinner = Object.values(state.weekPlan).filter(Boolean).length;
+  const weekDates = getWeekDates(state.weekOffset);
+  const MONTHS = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
   const days = DAYS.map((day, i) => {
     const prevRaw = i > 0 ? (state.weekPlan[DAYS[i-1]] || null) : null;
     const prevIsCustom = prevRaw && prevRaw.startsWith("__custom__:");
@@ -408,10 +502,17 @@ function renderSettimana() {
         </div>`
       : `<button class="btn btn-outline" onclick="openPicker('${day}')">+ Aggiungi</button>`;
 
+    const dateObj = weekDates[i];
+    const dateStr = `${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]}`;
+    const isToday = dateObj.toDateString() === new Date().toDateString();
+    const usatoBtn = (dinner || isCustomDinner) ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
     return `<div class="day-card">
-      <div class="day-header" style="display:flex;align-items:center">
-        <span>${day}</span>
-        ${prepReminder}
+      <div class="day-header">
+        <div>
+          <div class="day-name"${isToday?' style="color:#E07C3B"':''}>${day}</div>
+          <div class="day-date">${dateStr}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">${usatoBtn}${prepReminder}</div>
       </div>
       <div class="day-row">
         <span class="day-label">Colazione</span>
@@ -427,7 +528,13 @@ function renderSettimana() {
       </div>
     </div>`;
   }).join("");
-  return `${noticeEl("info","La cena diventa automaticamente il <strong>pranzo del giorno dopo</strong>. 🌙 = prepara la colazione di domani stasera.")}
+  const weekLabel = `${weekDates[0].getDate()} ${MONTHS[weekDates[0].getMonth()]} – ${weekDates[6].getDate()} ${MONTHS[weekDates[6].getMonth()]}`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset--;render()">←</button>
+      <span style="font-size:13px;font-weight:600;color:#555">${weekLabel}</span>
+      <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset++;render()">→</button>
+    </div>
+    ${noticeEl("info","La cena diventa automaticamente il <strong>pranzo del giorno dopo</strong>. 🌙 = prepara la colazione di domani stasera.")}
     ${filledDinner===7 ? noticeEl("success","✓ Cene complete! Vai su <strong>Spesa</strong> per generare la lista.") : ""}
     ${days}`;
 }
@@ -492,8 +599,26 @@ function renderDispensa() {
   const suggestions = allIngs.filter(n => !state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase()));
   const dropItems = suggestions.map(n => `<div onclick="selectPantryIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
   const dropdown = `<div id="pantry-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${dropItems}</div>`;
+  const apiKey = localStorage.getItem('cm:apikey') || '';
+  const apiKeySection = state.showApiKey ? `<div style="background:#F8F8F8;border:1px solid #eee;border-radius:10px;padding:12px;margin-top:12px">
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:6px">Chiave API Anthropic (per leggere gli scontrini)</label>
+      <div style="display:flex;gap:8px">
+        <input class="input" id="apikey-input" type="password" value="${h(apiKey)}" placeholder="sk-ant-..." style="flex:1;font-family:monospace">
+        <button class="btn btn-primary" onclick="saveApiKey()">Salva</button>
+      </div>
+    </div>` : '';
+  const receiptBtn = state.receiptLoading
+    ? `<button class="btn btn-outline" disabled><span class="spinner"></span> Analisi...</button>`
+    : `<button class="btn btn-outline" onclick="document.getElementById('receipt-input').click()">📷 Carica scontrino</button>`;
   return `${noticeEl("info","Gli ingredienti qui presenti vengono <strong>esclusi automaticamente</strong> dalla lista della spesa.")}
-    <div style="position:relative;margin-bottom:16px">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      ${receiptBtn}
+      <button class="btn btn-outline" onclick="downloadPantry()">⬇ Scarica dispensa.txt</button>
+      <button class="btn btn-ghost" style="font-size:12px;color:#aaa" onclick="state.showApiKey=!state.showApiKey;render()">⚙ API key</button>
+    </div>
+    <input type="file" id="receipt-input" accept="image/*" style="display:none" onchange="handleReceiptFile(this)">
+    ${apiKeySection}
+    <div style="position:relative;margin-bottom:16px;margin-top:12px">
       <div style="display:flex;gap:8px">
         <input class="input" id="pantry-input" value="${h(state.newPantry)}" placeholder="Cerca o scrivi un ingrediente..." autocomplete="off"
           oninput="state.newPantry=this.value;filterPantryDrop(this.value)"
@@ -539,23 +664,32 @@ function renderSpesa() {
     return headerCard + addExtra + noticeEl("info","Lista vuota. Pianifica la settimana e premi \"Genera lista\".");
   }
 
-  const makeItems = arr => arr.map((item,i) => `
-    <div class="check-item" style="${i<arr.length-1?'border-bottom:1px solid #f5f5f5':''}">
+  const makeItem = (item) => `
+    <div class="check-item">
       <div class="checkbox ${item.checked?'checked':''}" onclick="toggleCheck('${item.id}')">${item.checked?"✓":""}</div>
       <span class="check-label ${item.checked?'done':''}">${h(item.name)}</span>
       ${item.unit&&item.unit!=="qb"&&item.amount>0?`<span class="check-qty">${item.amount} ${h(item.unit)}</span>`:""}
       ${item.unit==="qb"?`<span style="font-size:12px;color:#bbb">q.b.</span>`:""}
       ${item.manual?`<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;padding:0 2px" onclick="removeShopItem('${item.id}')">×</button>`:""}
-    </div>`).join("");
+    </div>`;
 
-  const todoSect = todo.length > 0 ? `<div class="card mb12">
-    <div class="section-hdr" style="color:#555"><span>Da comprare</span><span>${todo.length}</span></div>
-    ${makeItems(todo)}
-  </div>` : "";
+  let todoSect = "";
+  if (todo.length > 0) {
+    const byCat = {};
+    for (const item of todo) {
+      const cat = item.category || "varie";
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(item);
+    }
+    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c =>
+      `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${byCat[c.id].map(makeItem).join("")}`
+    ).join("");
+    todoSect = `<div class="card mb12">${catSections}</div>`;
+  }
 
   const doneSect = done.length > 0 ? `<div class="card" style="opacity:0.75">
     <div class="section-hdr" style="color:#16A34A"><span>✓ Già comprati</span><span>${done.length}</span></div>
-    ${makeItems(done)}
+    ${done.map(makeItem).join("")}
   </div>` : "";
 
   return headerCard + progressBar + addExtra + todoSect + doneSect;
@@ -814,7 +948,7 @@ function toggleCheck(id) { state.shopping=state.shopping.map(i=>i.id===id?{...i,
 function removeShopItem(id) { state.shopping=state.shopping.filter(i=>i.id!==id); save("s",state.shopping); render(); }
 function addShopItem() {
   const n=state.newShopping.trim(); if(!n) return;
-  state.shopping.push({id:uid(),name:n,amount:0,unit:"",checked:false,manual:true}); state.newShopping=""; save("s",state.shopping); render();
+  state.shopping.push({id:uid(),name:n,amount:0,unit:"",checked:false,manual:true,category:categorizeItem(n)}); state.newShopping=""; save("s",state.shopping); render();
 }
 function clearChecked() { state.shopping=state.shopping.map(i=>({...i,checked:false})); save("s",state.shopping); render(); }
 
@@ -907,6 +1041,103 @@ function previewCSV(text) {
 function importParsed() {
   const el=document.getElementById("csv-preview"); if(!el||!el._parsed)return;
   state.recipes.push(...el._parsed); save("r",state.recipes); state.view="list"; state.tab="paniere"; render();
+}
+
+// ═══════════════════════════════════════════════════════
+// NUOVE FUNZIONI
+// ═══════════════════════════════════════════════════════
+function markConsumed(day) {
+  const raw = state.weekPlan[day];
+  if (!raw || raw.startsWith("__custom__:")) return;
+  const recipe = state.recipes.find(r => r.id === raw);
+  if (!recipe) return;
+  if (!confirm(`Rimuovere gli ingredienti di "${recipe.name}" dalla dispensa?`)) return;
+  const ingNames = recipe.ing.map(i => i.n.toLowerCase().trim());
+  state.pantry = state.pantry.filter(p => {
+    const pn = p.name.toLowerCase().trim();
+    return !ingNames.some(n => pn.includes(n) || n.includes(pn));
+  });
+  save("p", state.pantry);
+  render();
+}
+
+function downloadPantry() {
+  if (state.pantry.length === 0) { alert("La dispensa è vuota."); return; }
+  const text = state.pantry.map(p => p.name).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
+  a.download = "dispensa.txt";
+  a.click();
+}
+
+function saveApiKey() {
+  const inp = document.getElementById("apikey-input");
+  if (!inp) return;
+  localStorage.setItem('cm:apikey', inp.value.trim());
+  state.showApiKey = false;
+  render();
+}
+
+async function resizeImage(file, maxDim=1568) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', 0.85);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handleReceiptFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const apiKey = localStorage.getItem('cm:apikey');
+  if (!apiKey) { state.showApiKey = true; render(); alert("Inserisci prima la chiave API Anthropic."); return; }
+  state.receiptLoading = true; render();
+  try {
+    const base64 = await resizeImage(file);
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model:'claude-haiku-4-5-20251001', max_tokens:512,
+        system:'Rispondi solo con un JSON array valido. Niente markdown, niente spiegazioni.',
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
+          {type:'text',text:'Elenca i prodotti alimentari in questo scontrino come JSON array di stringhe in italiano (nomi semplici): ["uova", "latte", ...]'}
+        ]}]
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error?.message || resp.status);
+    const text = data.content[0].text;
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error("Formato risposta non valido");
+    const items = JSON.parse(match[0]);
+    let added = 0;
+    for (const name of items) {
+      const n = String(name).trim();
+      if (n && !state.pantry.some(p => p.name.toLowerCase() === n.toLowerCase())) {
+        state.pantry.push({id:uid(), name:n}); added++;
+      }
+    }
+    save("p", state.pantry);
+    alert(`Aggiunti ${added} prodotti dalla dispensa.`);
+  } catch(e) {
+    alert("Errore: " + e.message);
+  } finally {
+    state.receiptLoading = false;
+    input.value = "";
+    render();
+  }
 }
 
 // ═══════════════════════════════════════════════════════
