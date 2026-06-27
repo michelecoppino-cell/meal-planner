@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosa mangiamo?</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f0; color: #111; }
+  button { cursor: pointer; font-family: inherit; border: none; background: none; }
+  input, select, textarea { font-family: inherit; font-size: 14px; }
+
+  .app { max-width: 720px; margin: 0 auto; background: #fff; min-height: 100vh; }
+
+  /* HEADER */
+  .header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px 0; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .header h1 { font-size: 17px; font-weight: 700; }
+  .tabs { display: flex; overflow-x: auto; gap: 0; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex-shrink: 0; padding: 8px 12px; font-size: 12px; font-weight: 400; color: #888; border-bottom: 2.5px solid transparent; margin-bottom: -1px; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; cursor: pointer; }
+  .tab.active { font-weight: 700; color: #111; border-bottom-color: #111; }
+
+  /* CONTENT */
+  .content { padding: 16px 16px 80px; }
+
+  /* CARDS */
+  .card { background: #fff; border: 1px solid #eee; border-radius: 12px; overflow: hidden; }
+  .card + .card { margin-top: 10px; }
+
+  /* RECIPE GRID */
+  .recipe-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .recipe-card { cursor: pointer; border: 1px solid #eee; border-radius: 12px; overflow: hidden; background: #fff; }
+  .recipe-card:active { opacity: 0.7; }
+  .recipe-card-bar { height: 4px; }
+  .recipe-card-body { padding: 12px; }
+  .recipe-name { font-size: 13px; font-weight: 600; margin: 8px 0 5px; line-height: 1.4; color: #111; }
+  .recipe-sub { font-size: 12px; color: #777; margin-bottom: 3px; }
+  .recipe-time { font-size: 12px; color: #999; }
+
+  /* TAGS */
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+  .tag-primavera { background: #E8F5EE; color: #2D6A4F; }
+  .tag-estate    { background: #FEF3E8; color: #B45309; }
+  .tag-autunno   { background: #F8EEE8; color: #7C3D1E; }
+  .tag-inverno   { background: #E8F0FA; color: #1E4D8C; }
+
+  /* NOTICE */
+  .notice { border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+  .notice-info { background: #F5F5F5; color: #555; border: 1px solid #E0E0E0; }
+  .notice-warning { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
+  .notice-success { background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; }
+
+  /* BUTTONS */
+  .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; font-size: 13px; padding: 7px 14px; cursor: pointer; font-family: inherit; }
+  .btn-primary { background: #222; color: #fff; font-weight: 600; border: none; }
+  .btn-outline { background: none; border: 1px solid #ccc; color: #444; }
+  .btn-ghost { background: none; border: none; color: #666; padding: 6px 0; }
+  .btn-danger { background: #FEE2E2; color: #B91C1C; border: none; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* FILTERS */
+  .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-btn { padding: 4px 12px; border-radius: 20px; font-size: 12px; border: 1px solid #ddd; background: #F5F5F5; color: #555; cursor: pointer; font-family: inherit; }
+  .filter-btn.active { background: #222; color: #fff; font-weight: 600; border-color: #222; }
+
+  /* FORM */
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; font-family: inherit; outline: none; }
+  .input:focus { border-color: #999; }
+  .ing-row { display: grid; grid-template-columns: 1fr 70px 80px 32px; gap: 6px; margin-bottom: 6px; }
+  .ing-del { background: none; border: 1px solid #ddd; border-radius: 8px; color: #bbb; font-size: 18px; cursor: pointer; }
+
+  /* WEEK PLANNER */
+  .day-card { border: 1px solid #eee; border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+  .day-header { padding: 7px 12px; background: #FAFAFA; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .day-name { font-size: 13px; font-weight: 600; color: #333; }
+  .day-date { font-size: 11px; color: #aaa; font-weight: 400; }
+  .day-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+  .day-row + .day-row { border-top: 1px solid #f5f5f5; }
+  .day-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #bbb; width: 72px; flex-shrink: 0; font-weight: 600; }
+  .dot { border-radius: 50%; flex-shrink: 0; }
+
+  /* SHOPPING */
+  .progress-bar-bg { height: 5px; background: #f0f0f0; border-radius: 3px; margin-bottom: 16px; }
+  .progress-bar-fill { height: 5px; background: #16A34A; border-radius: 3px; transition: width 0.3s; }
+  .section-hdr { padding: 6px 12px; background: #FAFAFA; border-bottom: 1px solid #eee; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; display: flex; justify-content: space-between; }
+  .check-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+  .check-item + .check-item { border-top: 1px solid #f5f5f5; }
+  .checkbox { width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; border: 1.5px solid #ccc; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff; transition: background 0.15s; }
+  .checkbox.checked { background: #16A34A; border: none; }
+  .check-label { flex: 1; font-size: 14px; }
+  .check-label.done { color: #bbb; text-decoration: line-through; }
+  .check-qty { font-size: 13px; font-weight: 600; color: #777; white-space: nowrap; }
+
+  /* BREAKFAST CARD */
+  .b-card { cursor: pointer; border: 1px solid #eee; border-radius: 12px; overflow: hidden; background: #fff; margin-bottom: 10px; }
+  .b-card:active { opacity: 0.7; }
+  .b-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+
+  /* DISPENSA */
+  .pantry-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .pantry-item + .pantry-item { border-top: 1px solid #f5f5f5; }
+
+  /* DETAIL */
+  .detail-ing-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .step-row { display: flex; gap: 12px; padding: 8px 0; font-size: 14px; line-height: 1.6; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; margin-top: 2px; }
+
+  .hidden { display: none !important; }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .mt8 { margin-top: 8px; }
+  .mt12 { margin-top: 12px; }
+  .mt16 { margin-top: 16px; }
+  .mb8 { margin-bottom: 8px; }
+  .mb12 { margin-bottom: 12px; }
+  .mb16 { margin-bottom: 16px; }
+  .storage-badge { font-size: 11px; color: #B45309; background: #FEF3C7; padding: 2px 7px; border-radius: 10px; }
+  .btn-green { background: #DCFCE7; color: #166534; border: none; font-weight: 600; }
+  .cat-hdr { padding: 7px 12px; background: #F8F8F8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #666; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ddd; border-top-color: #333; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (min-width: 640px) {
+    .app { border-left: 1px solid #eee; border-right: 1px solid #eee; }
+    .content { padding: 24px 32px 100px; }
+    .header { padding: 16px 32px 0; }
+    .header h1 { font-size: 20px; }
+    .tab { padding: 10px 16px; font-size: 13px; }
+    .recipe-grid { gap: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-top">
+      <h1>🥗 Cosa mangiamo?</h1>
+      <span id="storage-badge" class="storage-badge hidden">⚠ Pubblica per salvare</span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+  <div class="content" id="content"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// DATI
+// ═══════════════════════════════════════════════════════
+const DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const UNITS = ["g","kg","ml","l","pz","cucchiai","cucchiaio","cucchiaino","qb"];
+
+const SHOP_CATS = [
+  {id:"varie",label:"🗂 Varie"},
+  {id:"cosmetici",label:"🧴 Cosmetici e igiene"},
+  {id:"giardino",label:"🌿 Giardino e animali"},
+  {id:"lavatrice",label:"🫧 Lavatrice e lavastoviglie"},
+  {id:"pasta",label:"🍝 Pasta e sughi"},
+  {id:"olio",label:"🫙 Olio e legumi"},
+  {id:"snack",label:"🍪 Patatine e biscotti"},
+  {id:"alcolici",label:"🍷 Alcolici"},
+  {id:"frigo",label:"🧊 Frigo"},
+  {id:"frutta",label:"🥦 Frutta e verdura"},
+  {id:"cereali",label:"🌾 Cereali integrali e frutta secca"},
+];
+
+const INGREDIENT_CAT = {
+  "orzo perlato":"pasta","orzo":"pasta","farro semiperlato":"pasta","farro":"pasta",
+  "pasta corta":"pasta","ditalini":"pasta","tubetti":"pasta",
+  "passata di pomodoro":"pasta","pomodori pelati":"pasta","concentrato di pomodoro":"pasta",
+  "brodo vegetale":"pasta","farina di polenta":"pasta","alloro":"pasta",
+  "olio evo":"olio","olio di sesamo tostato":"olio","olio di sesamo":"olio","olio di cocco":"olio",
+  "ceci cotti":"olio","ceci":"olio","lenticchie rosse":"olio","lenticchie nere":"olio",
+  "lenticchie nere cotte":"olio","fagioli borlotti cotti":"olio","fagioli borlotti":"olio",
+  "fagioli cannellini cotti":"olio","cannellini cotti":"olio","fagioli cannellini":"olio",
+  "aceto di mele":"olio","tahini":"olio","capperi":"olio","tamari":"olio","miso":"olio","salsa di soia":"olio",
+  "uova":"frigo","ricotta fresca":"frigo","ricotta di capra":"frigo","yogurt bianco naturale":"frigo",
+  "yogurt greco o bianco naturale":"frigo","feta":"frigo","tofu":"frigo","tempeh":"frigo","seitan":"frigo",
+  "salmone (tranci)":"frigo","salmone":"frigo","petto di pollo":"frigo","pollo":"frigo",
+  "latte":"frigo","latte vegetale":"frigo","latte di mandorla non zuccherato":"frigo","latte di mandorla":"frigo",
+  "burro chiarificato":"frigo","formaggio fresco o feta":"frigo","avocado maturo":"frigo","avocado":"frigo",
+  "asparagi":"frutta","piselli freschi o surgelati":"frutta","piselli":"frutta",
+  "cipollotti":"frutta","cipolla rossa":"frutta","cipolla":"frutta","aglio":"frutta",
+  "zucchine":"frutta","pomodorini":"frutta","melanzana":"frutta","peperoni misti":"frutta","peperoni":"frutta",
+  "fagiolini":"frutta","cavolo nero":"frutta","cavolo cappuccio":"frutta","broccoli":"frutta","broccoletti":"frutta",
+  "spinaci freschi":"frutta","spinaci":"frutta","funghi misti":"frutta","funghi":"frutta",
+  "zucca":"frutta","carote":"frutta","carota":"frutta","sedano":"frutta",
+  "fave fresche sgranate":"frutta","fave":"frutta","agretti":"frutta","sclopit/strigoli freschi":"frutta",
+  "patate":"frutta","mela":"frutta","banana matura":"frutta","banana":"frutta",
+  "limone":"frutta","frutti di bosco freschi o surgelati":"frutta","frutti di bosco":"frutta",
+  "frutta fresca di stagione":"frutta","frutta fresca":"frutta","castagne bollite":"frutta","castagne":"frutta",
+  "menta fresca":"frutta","basilico fresco":"frutta","timo fresco":"frutta","rosmarino fresco":"frutta",
+  "salvia fresca":"frutta","erba cipollina":"frutta","zenzero fresco":"frutta","carciofi":"frutta",
+  "verdure di stagione a scelta":"frutta","edamame sgranati surgelati":"frutta","edamame":"frutta",
+  "peperoncino":"frutta","rosmarino e timo":"frutta","menta e basilico freschi":"frutta",
+  "fiocchi di avena":"cereali","farina d'avena (o avena frullata)":"cereali","farina d'avena":"cereali",
+  "riso integrale":"cereali","riso venere":"cereali","riso":"cereali","quinoa":"cereali","miglio":"cereali","amaranto":"cereali",
+  "semi di chia":"cereali","semi di sesamo":"cereali","semi di lino macinati":"cereali","semi di lino":"cereali",
+  "semi di zucca":"cereali","semi di girasole":"cereali","noci":"cereali","mandorle":"cereali",
+  "granella di noci o mandorle":"cereali","granella di noci":"cereali","pane integrale":"cereali",
+  "estratto di vaniglia":"cereali","cannella":"cereali","noce moscata":"cereali",
+  "curcuma":"cereali","cumino in polvere":"cereali","cumino":"cereali","paprika affumicata":"cereali",
+  "succo di limone":"cereali",
+};
+
+function categorizeItem(name) {
+  const lower = name.toLowerCase().trim();
+  if (INGREDIENT_CAT[lower]) return INGREDIENT_CAT[lower];
+  for (const [key, cat] of Object.entries(INGREDIENT_CAT)) {
+    if (lower.includes(key) || key.includes(lower)) return cat;
+  }
+  return "varie";
+}
+
+function getWeekDates(offset) {
+  const today = new Date();
+  const dow = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + (offset || 0) * 7);
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+const TAGS = {
+  primavera: { dot:"#4A9B6F", label:"🌱 Primavera" },
+  estate:    { dot:"#E07C3B", label:"☀️ Estate" },
+  autunno:   { dot:"#A0522D", label:"🍂 Autunno" },
+  inverno:   { dot:"#3A6EA5", label:"❄️ Inverno" },
+};
+
+const SEED_RECIPES = [
+  {id:"r1",tag:"primavera",name:"Farro con asparagi, piselli e ricotta al limone",time:"30 min",grain:"Farro",protein:"Ricotta",note:"La ricotta va aggiunta a fuoco spento: si scioglie parzialmente creando una crema naturale.",ing:[{n:"farro semiperlato",a:200,u:"g"},{n:"asparagi",a:300,u:"g"},{n:"piselli freschi o surgelati",a:200,u:"g"},{n:"ricotta fresca",a:150,u:"g"},{n:"limone",a:1,u:"pz"},{n:"cipollotti",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il farro in acqua salata 20-25 min, scola.","Spezza gli asparagi eliminando la parte dura, tagliali a pezzetti.","Sbollenta asparagi e piselli 5 min in acqua salata, tienili al dente.","Soffriggi i cipollotti a rondelle in olio evo per 3 minuti.","Aggiungi asparagi e piselli, salta 2 minuti. Unisci il farro e mescola.","Spegni il fuoco. Aggiungi la ricotta a cucchiaiate e la scorza del limone: si scioglie parzialmente creando cremosità naturale. Un filo d'olio a finire."]},
+  {id:"r2",tag:"primavera",name:"Quinoa con carciofi brasati e ceci al timo",time:"40 min",grain:"Quinoa",protein:"Ceci",note:"I carciofi immersi in acqua acidulata con limone non anneriscono mentre li pulisci.",ing:[{n:"quinoa",a:200,u:"g"},{n:"carciofi",a:4,u:"pz"},{n:"ceci cotti",a:400,u:"g"},{n:"aglio",a:2,u:"pz"},{n:"timo fresco",a:0,u:"qb"},{n:"limone",a:1,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci la quinoa (1:2) 15 min, lascia riposare coperta 5 min.","Pulisci i carciofi eliminando foglie dure e barbetta, tagliali a spicchi. Immergili in acqua e limone.","Soffriggi aglio in olio, aggiungi i carciofi scolati e brasali coperti a fuoco medio 15 min, aggiungendo poca acqua se serve.","Aggiungi i ceci e il timo, cuoci 5 minuti finché tutto ben insaporito.","Mescola con la quinoa. Servi con un filo d'olio e succo di limone."]},
+  {id:"r3",tag:"primavera",name:"Riso integrale con fave, cipollotti e tofu alla menta",time:"45 min",grain:"Riso integrale",protein:"Tofu",note:"Le fave vanno sbucciate due volte: dal baccello e dalla pellicina verde. Vale la pena, diventano dolcissime.",ing:[{n:"riso integrale",a:200,u:"g"},{n:"fave fresche sgranate",a:300,u:"g"},{n:"tofu",a:250,u:"g"},{n:"cipollotti",a:3,u:"pz"},{n:"menta fresca",a:0,u:"qb"},{n:"aglio",a:1,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il riso integrale (1:2,5) 35-40 min per assorbimento.","Sbollenta le fave 3 min, scolale e sbucciale dalla pellicina esterna.","Pressa il tofu 15 min tra due piatti con un peso, taglia a cubetti.","Rosola il tofu in olio con l'aglio finché dorato su tutti i lati (8 min).","Soffriggi i cipollotti, aggiungi le fave e salta 2 minuti.","Unisci riso e tofu, mescola. A fuoco spento aggiungi abbondante menta fresca spezzettata a mano.","Adulti: un filo di tamari nel piatto."]},
+  {id:"r4",tag:"primavera",name:"Orzo con agretti, ceci e uova strapazzate al limone",time:"30 min",grain:"Orzo",protein:"Ceci + Uova",note:"Gli agretti si sbollentano solo 2 minuti: devono restare leggermente croccanti e perdere solo l'amaro.",ing:[{n:"orzo perlato",a:180,u:"g"},{n:"agretti",a:300,u:"g"},{n:"ceci cotti",a:300,u:"g"},{n:"uova",a:4,u:"pz"},{n:"limone",a:1,u:"pz"},{n:"aglio",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci l'orzo in acqua salata 20-25 min, scola.","Sciacqua gli agretti ed elimina le radichette. Sbollentali 2 minuti, scola.","Soffriggi aglio in olio, aggiungi agretti e ceci, salta 3 minuti.","Sbatti le uova con la scorza grattugiata del limone. Strapazza in padella antiaderente a fuoco basso finché ben rapprese.","Assembla: orzo, agretti con ceci, uova strapazzate sopra. Spremi il limone a finire."]},
+  {id:"r5",tag:"primavera",name:"Riso con sclopit/strigoli, patate e ricotta di capra",time:"35 min",grain:"Riso",protein:"Ricotta di capra",note:"Lo sclopit (strigoli in italiano) è un'erba selvatica primaverile dal sapore delicato. Se non la trovi usa spinacini.",ing:[{n:"riso integrale",a:200,u:"g"},{n:"sclopit/strigoli freschi",a:250,u:"g"},{n:"patate",a:2,u:"pz"},{n:"ricotta di capra",a:120,u:"g"},{n:"aglio",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il riso in acqua salata 18-20 min, scola.","Pela le patate, tagliale a dadini piccoli. Sbollenta 8 min finché morbide.","Lava gli sclopit, elimina i gambi più duri.","Soffriggi aglio in olio, aggiungi sclopit e patate, salta 4-5 min finché le erbe appassiscono.","Unisci il riso, mescola bene. A fuoco spento incorpora la ricotta di capra a cucchiaiate. Un filo d'olio evo a finire."]},
+  {id:"r6",tag:"primavera",name:"Bowl di quinoa, ceci e spinaci al tahini",time:"30 min",grain:"Quinoa",protein:"Ceci",note:"Adulti: sciogli tamari o miso in poca acqua calda e aggiungi nel piatto.",ing:[{n:"quinoa",a:200,u:"g"},{n:"ceci cotti",a:400,u:"g"},{n:"spinaci freschi",a:200,u:"g"},{n:"cipolla rossa",a:1,u:"pz"},{n:"aglio",a:2,u:"pz"},{n:"tahini",a:3,u:"cucchiai"},{n:"limone",a:1,u:"pz"},{n:"cumino in polvere",a:1,u:"cucchiaino"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci la quinoa in acqua (1:2) per 15 min, lascia riposare coperta 5 min.","Rosola cipolla affettata e aglio in olio evo fino a doratura.","Aggiungi i ceci con il cumino, cuoci 5 min finché dorati.","Unisci gli spinaci e lascia appassire 2 minuti.","Frulla tahini con succo di limone e un cucchiaio d'acqua fino a crema fluida.","Assembla: quinoa alla base, ceci e spinaci sopra, filo di tahini.","Adulti: tamari o miso sciolto in acqua calda direttamente nel piatto."]},
+  {id:"r7",tag:"estate",name:"Miglio al vapore con zucchine, edamame e crema tahini-limone",time:"25 min",grain:"Miglio",protein:"Edamame",note:"Tutto cotto al vapore, niente grassi in cottura. La crema di tahini è il condimento principale: non lesinare.",ing:[{n:"miglio",a:200,u:"g"},{n:"zucchine",a:3,u:"pz"},{n:"edamame sgranati surgelati",a:200,u:"g"},{n:"tahini",a:3,u:"cucchiai"},{n:"limone",a:1,u:"pz"},{n:"erba cipollina",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il miglio in acqua (1:2) 15-18 min, sgrana con una forchetta.","Taglia le zucchine a rondelle. Cuoci al vapore zucchine ed edamame per 8 minuti, tienili al dente.","Prepara la crema: mescola tahini, succo di limone e 2 cucchiai d'acqua fino a crema fluida.","Disponi il miglio nel piatto, distribuisci zucchine ed edamame sopra.","Versa la crema di tahini a filo, completa con erba cipollina tagliuzzata.","Adulti: qualche goccia di tamari nel piatto."]},
+  {id:"r8",tag:"estate",name:"Orzo con fagiolini al vapore, uova sode e salsa yogurt alle erbe",time:"30 min",grain:"Orzo",protein:"Uova",note:"Le uova devono essere ben sode (10 minuti esatti). Raffreddale subito in acqua fredda: si sbucciano molto più facilmente.",ing:[{n:"orzo perlato",a:180,u:"g"},{n:"fagiolini",a:300,u:"g"},{n:"uova",a:4,u:"pz"},{n:"yogurt bianco naturale",a:100,u:"g"},{n:"menta e basilico freschi",a:0,u:"qb"},{n:"limone",a:1,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci l'orzo in acqua salata 20-25 min, scola e lascia intiepidire.","Lessa le uova in acqua bollente esattamente 10 minuti. Raffredda subito in acqua fredda, sbuccia e taglia a spicchi.","Cuoci i fagiolini al vapore 7-8 minuti, tienili croccanti.","Prepara la salsa: mescola yogurt, erbe tritate, succo di limone e un filo d'olio evo.","Assembla: orzo, fagiolini, uova a spicchi. Distribuisci la salsa yogurt sopra."]},
+  {id:"r9",tag:"estate",name:"Riso venere con salmone al vapore e zucchine trifolate",time:"45 min",grain:"Riso venere",protein:"Salmone",note:"Il riso venere è saporito di suo e regge bene il salmone delicato. Tutto cotto — sicuro in gravidanza.",ing:[{n:"riso venere",a:200,u:"g"},{n:"salmone (tranci)",a:400,u:"g"},{n:"zucchine",a:2,u:"pz"},{n:"limone",a:1,u:"pz"},{n:"erba cipollina",a:0,u:"qb"},{n:"aglio",a:1,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il riso venere in acqua salata 35-40 min, scola.","Taglia le zucchine a dadini. Soffriggi aglio in olio, aggiungi le zucchine e cuoci 7-8 min finché tenere e leggermente dorate.","Cuoci il salmone al vapore 12-15 minuti finché si sfalda con la forchetta.","Sfalda il salmone a pezzi grossi eliminando la pelle.","Assembla: riso venere, zucchine, salmone. Condisci con olio evo, succo di limone e erba cipollina abbondante."]},
+  {id:"r10",tag:"estate",name:"Orzo con tempeh, zucchine e pomodorini",time:"35 min",grain:"Orzo",protein:"Tempeh",note:"Sbollenta il tempeh 5 minuti prima per un sapore più delicato.",ing:[{n:"orzo perlato",a:200,u:"g"},{n:"tempeh",a:250,u:"g"},{n:"zucchine",a:2,u:"pz"},{n:"pomodorini",a:300,u:"g"},{n:"aglio",a:3,u:"pz"},{n:"paprika affumicata",a:1,u:"cucchiaino"},{n:"basilico fresco",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci l'orzo in acqua salata 20-25 min, scola al dente.","Sbollenta il tempeh a cubetti 5 min (opzionale), asciuga bene.","Rosola il tempeh con paprika e aglio finché croccante (8-10 min).","Aggiungi zucchine a rondelle, cuoci 5 minuti.","Aggiungi i pomodorini tagliati a metà, cuoci 5 minuti.","Unisci l'orzo, mescola e lascia amalgamare 2 minuti.","Servi con basilico fresco spezzettato a mano."]},
+  {id:"r11",tag:"estate",name:"Salmone al forno con farro e fagiolini",time:"35 min",grain:"Farro",protein:"Salmone",note:"Il farro condito si conserva benissimo per il pranzo del giorno dopo.",ing:[{n:"salmone (tranci)",a:400,u:"g"},{n:"farro semiperlato",a:200,u:"g"},{n:"fagiolini",a:300,u:"g"},{n:"limone",a:1,u:"pz"},{n:"timo fresco",a:0,u:"qb"},{n:"aglio",a:2,u:"pz"},{n:"capperi",a:1,u:"cucchiaio"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il farro in acqua salata 20-25 min, scola.","Sbollenta i fagiolini 5 min, tienili croccanti.","Disponi il salmone in teglia con olio, aglio, timo e limone a fette.","Cuoci in forno a 200°C per 12-15 min (si sfalda quando pronto).","Salta il farro con fagiolini e capperi in padella per 3 minuti.","Servi il salmone sopra il farro con i fagiolini."]},
+  {id:"r12",tag:"autunno",name:"Bowl di farro con zucca arrosto, tempeh e semi di zucca",time:"40 min",grain:"Farro",protein:"Tempeh",note:"La zucca lasciata con la buccia diventa più saporita. Se la buccia è dura toglila dopo la cottura.",ing:[{n:"farro semiperlato",a:200,u:"g"},{n:"zucca",a:500,u:"g"},{n:"tempeh",a:250,u:"g"},{n:"semi di zucca",a:2,u:"cucchiai"},{n:"salvia fresca",a:0,u:"qb"},{n:"aglio",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il farro in acqua salata 20-25 min, scola.","Taglia la zucca a dadini, condisci con olio e salvia, inforna a 200°C per 25-30 min finché dorata ai bordi.","Taglia il tempeh a cubetti. Rosola con aglio in olio finché croccante (8-10 min).","Tosta i semi di zucca in padella secca 2-3 min, metti da parte.","Assembla: farro, zucca arrosto, tempeh. Cospargi i semi di zucca.","Adulti: un filo di tamari o salsa di soia nel piatto."]},
+  {id:"r13",tag:"autunno",name:"Amaranto con funghi trifolati, lenticchie nere e castagne",time:"35 min",grain:"Amaranto",protein:"Lenticchie nere",note:"I funghi vanno cotti a fuoco alto senza mescolare troppo per dorare, non stufare. Le castagne danno una dolcezza inaspettata.",ing:[{n:"amaranto",a:180,u:"g"},{n:"funghi misti",a:300,u:"g"},{n:"lenticchie nere cotte",a:200,u:"g"},{n:"castagne bollite",a:100,u:"g"},{n:"aglio",a:2,u:"pz"},{n:"timo fresco",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci l'amaranto (1:2,5) 20 min, tienilo leggermente morbido.","Trifola i funghi: soffriggi aglio in olio a fuoco alto, aggiungi i funghi tagliati e cuoci senza mescolare troppo finché dorati (8-10 min). Aggiungi il timo.","Unisci le lenticchie nere, scalda 3 minuti.","Sbricciola grossolanamente le castagne bollite.","Assembla: amaranto, funghi con lenticchie, castagne sbriciolate sopra.","Adulti: miso sciolto nel piatto o olio evo a crudo."]},
+  {id:"r14",tag:"autunno",name:"Orzo con cavolo cappuccio brasato, ceci e feta",time:"40 min",grain:"Orzo",protein:"Ceci + Feta",note:"Il cavolo cappuccio brasato a lungo perde l'amaro e diventa quasi dolce. Non avere fretta con la cottura.",ing:[{n:"orzo perlato",a:200,u:"g"},{n:"cavolo cappuccio",a:400,u:"g"},{n:"ceci cotti",a:300,u:"g"},{n:"feta",a:100,u:"g"},{n:"aglio",a:2,u:"pz"},{n:"aceto di mele",a:1,u:"cucchiaio"},{n:"cumino",a:1,u:"cucchiaino"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci l'orzo in acqua salata 20-25 min, scola.","Affetta sottilmente il cavolo cappuccio. Soffriggi aglio in olio, aggiungi il cavolo e cuoci coperto a fuoco medio 15-20 min mescolando spesso finché morbido.","Sfuma con l'aceto di mele, aggiungi cumino e ceci, cuoci 5 min.","Unisci l'orzo, mescola. Servi con feta sbriciolata sopra che sciogliendosi condisce il tutto."]},
+  {id:"r15",tag:"autunno",name:"Pasta e fagioli con cavolo nero e rosmarino",time:"45 min",grain:"Pasta",protein:"Fagioli borlotti",note:"La pasta va cotta direttamente nella zuppa per assorbire i sapori. Deve risultare cremosa, non brodosa.",ing:[{n:"pasta corta (ditalini o tubetti)",a:200,u:"g"},{n:"fagioli borlotti cotti",a:500,u:"g"},{n:"cavolo nero",a:200,u:"g"},{n:"rosmarino fresco",a:0,u:"qb"},{n:"aglio",a:3,u:"pz"},{n:"concentrato di pomodoro",a:1,u:"cucchiaio"},{n:"brodo vegetale",a:800,u:"ml"},{n:"olio evo",a:0,u:"qb"}],steps:["Soffriggi aglio e rosmarino in abbondante olio evo a fuoco medio.","Aggiungi il concentrato di pomodoro, tosta 1 minuto mescolando.","Unisci i fagioli e il brodo, porta a ebollizione. Frulla metà dei fagioli per una consistenza cremosa.","Aggiungi il cavolo nero a listarelle (eliminando la costa centrale) e cuoci 5 minuti.","Versa la pasta e cuoci al dente. Aggiusta la densità con brodo se serve.","Lascia riposare 5 minuti. Adulti: abbondante olio evo a crudo."]},
+  {id:"r16",tag:"autunno",name:"Riso integrale, tofu al sesamo e broccoletti",time:"40 min",grain:"Riso integrale",protein:"Tofu",note:"Pressa il tofu 15 minuti con un peso: la texture croccante ne vale la pena.",ing:[{n:"riso integrale",a:200,u:"g"},{n:"tofu",a:300,u:"g"},{n:"broccoletti",a:400,u:"g"},{n:"semi di sesamo",a:3,u:"cucchiai"},{n:"zenzero fresco",a:1,u:"pz"},{n:"aglio",a:2,u:"pz"},{n:"olio di sesamo tostato",a:1,u:"cucchiaio"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il riso integrale (1:2,5) per 35-40 minuti per assorbimento.","Pressa il tofu 15 min poi taglia a cubetti da 2cm.","Tosta i semi di sesamo in padella secca fino a doratura, metti da parte.","Rosola il tofu in olio caldo finché dorato su tutti i lati (8 min).","Soffriggi zenzero e aglio grattugiati, aggiungi i broccoletti a cimette.","Cuoci al dente con un goccio d'acqua (5-6 min), il verde deve restare vivace.","Assembla con riso, tofu e broccoletti, cospargi sesamo e olio di sesamo.","Adulti: salsa di soia o tamari a piacere."]},
+  {id:"r17",tag:"autunno",name:"Minestra di fagioli borlotti e amaranto",time:"30 min",grain:"Amaranto",protein:"Fagioli borlotti",note:"Cuoci i borlotti secchi nel weekend e congelali in porzioni da 400g. L'amaranto assorbe molto: tienila più liquida del solito.",ing:[{n:"fagioli borlotti cotti",a:500,u:"g"},{n:"amaranto",a:120,u:"g"},{n:"carote",a:2,u:"pz"},{n:"patate",a:2,u:"pz"},{n:"rosmarino fresco",a:0,u:"qb"},{n:"aglio",a:3,u:"pz"},{n:"concentrato di pomodoro",a:2,u:"cucchiai"},{n:"brodo vegetale",a:1000,u:"ml"},{n:"olio evo",a:0,u:"qb"}],steps:["Soffriggi aglio e rosmarino in olio evo per 2 minuti.","Aggiungi il concentrato di pomodoro, tosta 1 minuto.","Unisci carote e patate a dadini, fagioli e brodo caldo.","Porta a ebollizione, aggiungi l'amaranto e cuoci 20 minuti.","Frulla un terzo della minestra e rimetti nel tegame per cremosità.","Adulti: miso sciolto nel piatto o olio evo a crudo."]},
+  {id:"r18",tag:"inverno",name:"Polenta con ragù di lenticchie rosse e seitan",time:"55 min",grain:"Polenta",protein:"Lenticchie + Seitan",note:"Le lenticchie rosse si sciolgono cuocendo e addensano il ragù naturalmente. Più cuoce, più è saporito.",ing:[{n:"farina di polenta",a:200,u:"g"},{n:"seitan",a:200,u:"g"},{n:"lenticchie rosse",a:150,u:"g"},{n:"passata di pomodoro",a:400,u:"g"},{n:"carota",a:1,u:"pz"},{n:"sedano",a:1,u:"pz"},{n:"cipolla",a:1,u:"pz"},{n:"brodo vegetale",a:600,u:"ml"},{n:"salvia fresca",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Soffriggi cipolla, carota e sedano tritati in olio per 8 minuti.","Aggiungi il seitan tritato grossolanamente, rosola 5 minuti.","Unisci passata, lenticchie rosse e brodo. Cuoci a fuoco basso 30-40 min: le lenticchie si sciolgono addensando il sugo.","Prepara la polenta: porta a ebollizione 800ml di acqua salata. Versa la farina a pioggia mescolando costantemente. Cuoci 40 min (o usa polenta istantanea).","Servi la polenta morbida con il ragù sopra e un filo d'olio evo."]},
+  {id:"r19",tag:"inverno",name:"Zuppa di cannellini, cavolo nero e farro tostato",time:"45 min",grain:"Farro tostato",protein:"Cannellini",note:"Tostare il farro prima di aggiungerlo alla zuppa gli dà una profondità di sapore quasi nocciolata — non saltare questo passaggio.",ing:[{n:"fagioli cannellini cotti",a:500,u:"g"},{n:"cavolo nero",a:250,u:"g"},{n:"farro semiperlato",a:180,u:"g"},{n:"aglio",a:3,u:"pz"},{n:"rosmarino fresco",a:0,u:"qb"},{n:"brodo vegetale",a:1200,u:"ml"},{n:"olio evo",a:0,u:"qb"}],steps:["Tosta il farro in padella secca a fuoco medio 5 minuti mescolando spesso, finché profumato e leggermente dorato.","Soffriggi aglio e rosmarino in abbondante olio evo.","Aggiungi i cannellini e il brodo, porta a ebollizione. Frulla circa un terzo per cremosità.","Aggiungi il cavolo nero a listarelle (eliminando la costa centrale dura) e il farro tostato. Cuoci 25 minuti a fuoco medio.","Adulti: olio evo a crudo abbondante e miso sciolto nel piatto."]},
+  {id:"r20",tag:"inverno",name:"Miglio con broccoli arrosto, tofu al forno e crema di sesamo",time:"40 min",grain:"Miglio",protein:"Tofu",note:"I broccoli ad alta temperatura diventano croccanti ai bordi — completamente diversi da quelli bolliti. Non abbassare la temperatura.",ing:[{n:"miglio",a:180,u:"g"},{n:"broccoli",a:500,u:"g"},{n:"tofu",a:300,u:"g"},{n:"tahini",a:2,u:"cucchiai"},{n:"limone",a:1,u:"pz"},{n:"paprika affumicata",a:1,u:"cucchiaino"},{n:"aglio",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il miglio (1:2) 15-18 min, sgrana con una forchetta.","Taglia i broccoli a cimette, condisci con olio, aglio tritato e paprika. Stendi su teglia.","Taglia il tofu a fette spesse, marina con olio e paprika. Aggiungi alla teglia.","Inforna tutto a 220°C per 20-25 min: i bordi dei broccoli devono essere croccanti.","Prepara la crema: mescola tahini, succo di limone e 2 cucchiai d'acqua.","Assembla: miglio, broccoli e tofu croccanti. Versa la crema di sesamo a filo."]},
+  {id:"r21",tag:"inverno",name:"Farro con cavolo nero, cannellini, aglio e limone",time:"35 min",grain:"Farro",protein:"Cannellini",note:"Usa abbondante olio evo sia per il soffritto che a crudo a fine cottura: è il condimento principale di questo piatto.",ing:[{n:"farro semiperlato",a:200,u:"g"},{n:"cavolo nero",a:300,u:"g"},{n:"cannellini cotti",a:400,u:"g"},{n:"aglio",a:3,u:"pz"},{n:"limone",a:1,u:"pz"},{n:"peperoncino",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il farro in acqua salata 20-25 min, scola.","Elimina la costa centrale del cavolo nero, taglia a listarelle. Sbollenta 5 minuti, scola bene.","Soffriggi aglio e peperoncino in abbondante olio evo a fuoco medio.","Aggiungi cannellini e cavolo nero, salta a fuoco vivace 5 minuti.","Unisci il farro, mescola. Lascia insaporire 2 minuti a fuoco basso.","Spegni. Aggiungi scorza grattugiata e succo di limone, un generoso filo d'olio evo a crudo."]},
+  {id:"r22",tag:"inverno",name:"Pollo al limone con miglio e verdure arrosto",time:"50 min",grain:"Miglio",protein:"Pollo",note:"Il miglio con le verdure è ottimo anche freddo per il pranzo del giorno dopo.",ing:[{n:"petto di pollo",a:400,u:"g"},{n:"miglio",a:180,u:"g"},{n:"peperoni misti",a:2,u:"pz"},{n:"zucchine",a:2,u:"pz"},{n:"melanzana",a:1,u:"pz"},{n:"limone",a:2,u:"pz"},{n:"rosmarino e timo",a:0,u:"qb"},{n:"aglio",a:3,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Marina il pollo con limone, olio, aglio e erbe per almeno 30 min.","Taglia le verdure a pezzi, condisci con olio e inforna a 200°C per 30 min.","Cuoci il miglio (1:2) per 15-18 min, sgrana con una forchetta.","Cuoci il pollo in padella (6-7 min per lato) o forno (180°C, 20-25 min).","Affetta il pollo e servi sul miglio con le verdure arrosto.","Spremi abbondante limone fresco a finire."]},
+  {id:"r23",tag:"inverno",name:"Zuppa densa di farro e lenticchie rosse",time:"40 min",grain:"Farro",protein:"Lenticchie rosse",note:"Si addensa molto il giorno dopo: al riscaldamento aggiungi un mestolo d'acqua calda.",ing:[{n:"farro semiperlato",a:180,u:"g"},{n:"lenticchie rosse",a:150,u:"g"},{n:"carote",a:3,u:"pz"},{n:"sedano",a:2,u:"pz"},{n:"cipolla",a:1,u:"pz"},{n:"pomodori pelati",a:400,u:"g"},{n:"brodo vegetale",a:1200,u:"ml"},{n:"curcuma",a:1,u:"cucchiaino"},{n:"alloro",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Soffriggi cipolla, carota e sedano a dadini in olio per 8 minuti.","Aggiungi i pelati schiacciati, cuoci 5 minuti.","Unisci farro, lenticchie, curcuma, alloro e brodo caldo.","Porta a ebollizione, copri e cuoci a fuoco basso 25-30 minuti.","Aggiusta la consistenza con brodo se necessario.","Adulti: sciogli mezzo cucchiaino di miso direttamente nel piatto."]},
+  {id:"r24",tag:"inverno",name:"Frittata al forno con miglio e cavolo nero",time:"45 min",grain:"Miglio",protein:"Uova + Feta",note:"Ottima fredda il giorno dopo: non richiede riscaldamento, ideale per il pranzo.",ing:[{n:"miglio",a:150,u:"g"},{n:"uova",a:6,u:"pz"},{n:"feta",a:100,u:"g"},{n:"cavolo nero",a:200,u:"g"},{n:"cipollotti",a:3,u:"pz"},{n:"noce moscata",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Cuoci il miglio (1:2) per 15-18 min, lascia raffreddare.","Sbollenta il cavolo nero 3 min, strizza bene e trita grossolanamente.","Soffriggi cipollotti, aggiungi cavolo e cuoci 5 minuti.","Sbatti le uova con noce moscata e pochissimo sale.","Mescola uova, miglio, cavolo e metà feta sbriciolata.","Versa in teglia oliata (24cm), spargi la feta rimanente sopra.","Inforna a 180°C per 20-25 min fino a rassodata e dorata."]}
+];
+
+const SEED_BREAKFASTS = [
+  {id:"b1",name:"Overnight oats con chia e frutti di bosco",time:"5 min (sera prima)",prepAhead:true,note:"Si prepara la sera in 5 minuti. La mattina è già pronta: aggiungi solo la frutta fresca.",ing:[{n:"fiocchi di avena",a:60,u:"g"},{n:"semi di chia",a:1,u:"cucchiaio"},{n:"latte vegetale",a:180,u:"ml"},{n:"yogurt bianco naturale",a:50,u:"g"},{n:"cannella",a:0,u:"qb"},{n:"frutti di bosco freschi o surgelati",a:80,u:"g"}],steps:["Mescola avena, chia, latte vegetale, yogurt e cannella in un barattolo.","Rimescola dopo 5 minuti per evitare grumi di chia.","Copri e lascia in frigorifero tutta la notte (minimo 4 ore).","La mattina aggiungi i frutti di bosco e mescola."]},
+  {id:"b2",name:"Budino di chia al latte di mandorla",time:"5 min (sera prima)",prepAhead:true,note:"Prepara 2-3 porzioni in una volta: si conserva in frigo fino a 3 giorni. Comodo per tutta la settimana.",ing:[{n:"semi di chia",a:40,u:"g"},{n:"latte di mandorla non zuccherato",a:300,u:"ml"},{n:"estratto di vaniglia",a:0,u:"qb"},{n:"frutta fresca di stagione",a:100,u:"g"},{n:"granella di noci o mandorle",a:10,u:"g"}],steps:["Mescola chia, latte di mandorla e vaniglia in un barattolo.","Rimescola dopo 5 minuti per evitare grumi.","Copri e riponi in frigo almeno 4 ore o tutta la notte.","La mattina servi con frutta fresca a pezzetti e granella di frutta secca."]},
+  {id:"b3",name:"Bircher muesli con mela e noci",time:"5 min (sera prima)",prepAhead:true,note:"L'ammollo notturno rende l'avena facilmente digeribile anche per il bambino.",ing:[{n:"fiocchi di avena",a:60,u:"g"},{n:"latte vegetale",a:120,u:"ml"},{n:"yogurt bianco naturale",a:50,u:"g"},{n:"mela",a:1,u:"pz"},{n:"semi di lino macinati",a:1,u:"cucchiaio"},{n:"noci",a:4,u:"pz"},{n:"succo di limone",a:0,u:"qb"},{n:"cannella",a:0,u:"qb"}],steps:["Mescola avena, latte vegetale, yogurt, semi di lino e cannella in un contenitore.","Grattugia la mela con la buccia e aggiungila subito con un goccio di limone per non annerire.","Copri e riponi in frigo per tutta la notte.","La mattina sgrana con una forchetta e aggiungi le noci spezzettate."]},
+  {id:"b4",name:"Uova sode con avocado, pane integrale e semi",time:"3 min mattina (uova la sera)",prepAhead:true,note:"Lessa le uova la sera durante la cena: 10 minuti esatti. Si conservano in frigo con il guscio fino a 5 giorni.",ing:[{n:"uova",a:2,u:"pz"},{n:"avocado maturo",a:1,u:"pz"},{n:"pane integrale",a:2,u:"pz"},{n:"semi di sesamo o zucca",a:1,u:"cucchiaio"},{n:"limone",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Sera: lessa le uova 10 minuti esatti in acqua bollente. Raffredda subito in acqua fredda. Conserva in frigo con il guscio.","Mattina: tosta le fette di pane integrale.","Schiaccia l'avocado con una forchetta, aggiungi qualche goccia di limone.","Sbuccia e affetta le uova sode.","Distribuisci l'avocado sul pane, disponi le uova a fette sopra. Cospargi i semi e un filo d'olio evo.","Per il bambino: servi le uova a spicchi separati senza condimenti."]},
+  {id:"b5",name:"Frittata monoporzione al forno (prep domenicale)",time:"5 min domenica + 2 min mattina",prepAhead:true,note:"Prepara 6 stampini da muffin domenica: durano tutta la settimana in frigo. Al mattino si riscaldano in 2 minuti in padella.",ing:[{n:"uova",a:6,u:"pz"},{n:"verdure di stagione a scelta",a:150,u:"g"},{n:"formaggio fresco o feta",a:50,u:"g"},{n:"latte",a:2,u:"cucchiai"},{n:"noce moscata",a:0,u:"qb"},{n:"olio evo",a:0,u:"qb"}],steps:["Domenica: salta le verdure di stagione in padella con un filo d'olio (spinaci, zucchine, funghi o cavolo nero).","Sbatti le uova con il latte, noce moscata e pochissimo sale.","Oli gli stampini da muffin, distribuisci le verdure e versa il composto di uova.","Sbricciola il formaggio sopra ogni stampino.","Inforna a 180°C per 18-20 minuti finché gonfi e dorati. Lascia raffreddare, conserva in frigo.","Al mattino: riscalda in padella coperta a fuoco basso per 2 minuti."]},
+  {id:"b6",name:"Pancakes di avena e banana (impasto la sera)",time:"5 min sera + 10 min mattina",prepAhead:true,note:"L'impasto in frigo tutta la notte migliora la consistenza. La banana deve essere bella matura (con macchie scure) per dolcificare naturalmente.",ing:[{n:"farina d'avena (o avena frullata)",a:80,u:"g"},{n:"banana matura",a:1,u:"pz"},{n:"uova",a:2,u:"pz"},{n:"latte vegetale",a:50,u:"ml"},{n:"cannella",a:0,u:"qb"},{n:"olio di cocco o burro chiarificato",a:0,u:"qb"}],steps:["Sera: frulla insieme avena, banana, uova, latte e cannella fino a pastella omogenea. Copri e riponi in frigo.","Mattina: scalda una padella antiaderente a fuoco medio-basso con un velo di olio.","Versa un mestolino di pastella per pancake. Cuoci 2-3 min per lato finché dorato e fermo al centro.","Escono circa 8-10 pancakes piccoli.","Servi con fettine di banana fresca, frutti di bosco o un velo di crema di mandorle.","Per il bambino: perfetti così — niente sale, niente zucchero."]},
+  {id:"b7",name:"Porridge di avena con mandorle e banana",time:"10 min",prepAhead:false,note:"Per il bambino frulla la banana direttamente dentro il porridge caldo: diventa naturalmente dolce senza aggiungere nulla.",ing:[{n:"fiocchi di avena",a:60,u:"g"},{n:"latte vegetale",a:250,u:"ml"},{n:"banana matura",a:1,u:"pz"},{n:"mandorle",a:15,u:"g"},{n:"semi di lino macinati",a:1,u:"cucchiaio"},{n:"cannella",a:0,u:"qb"}],steps:["Porta il latte a sfiorare il bollore in un pentolino.","Aggiungi l'avena e mescola a fuoco basso per 4-5 minuti finché cremoso.","Spegni e lascia riposare 1 minuto coperto.","Servi con banana a rondelle, mandorle tritate grossolanamente e semi di lino."]},
+  {id:"b8",name:"Yogurt con muesli di semi e frutta fresca",time:"5 min",prepAhead:false,note:"Prepara il mix di semi in grande quantità e conserva in un barattolo: dura settimane. Ogni mattina pronto in 2 minuti.",ing:[{n:"yogurt greco o bianco naturale",a:150,u:"g"},{n:"fiocchi di avena",a:30,u:"g"},{n:"semi di zucca",a:1,u:"cucchiaio"},{n:"semi di girasole",a:1,u:"cucchiaio"},{n:"noci",a:5,u:"pz"},{n:"frutta fresca di stagione",a:100,u:"g"}],steps:["Versa lo yogurt in una ciotola.","Aggiungi fiocchi di avena, semi e noci spezzettate.","Completa con la frutta fresca tagliata a pezzi.","Tip: prepara un barattolo di muesli (avena + semi + frutta secca) da tenere sempre pronto."]},
+  {id:"b9",name:"Uova strapazzate con verdure di stagione e pane integrale",time:"10 min",prepAhead:false,note:"Le verdure cambiano con la stagione: spinaci in primavera, zucchine in estate, funghi in autunno, cavolo nero in inverno. Uova ben rapprese, non liquide.",ing:[{n:"uova",a:3,u:"pz"},{n:"verdure di stagione a scelta",a:100,u:"g"},{n:"pane integrale",a:2,u:"pz"},{n:"olio evo",a:0,u:"qb"}],steps:["Tosta le fette di pane integrale.","Salta le verdure di stagione in padella con un filo d'olio per 3-4 minuti.","Sbatti le uova. Abbassa il fuoco al minimo, versa le uova nella padella con le verdure.","Mescola lentamente con una spatola finché le uova sono ben rapprese.","Per il bambino: servi una parte senza sale prima di condire.","Servi sulle fette di pane tostato."]}
+];
+
+
+// ═══════════════════════════════════════════════════════
+// STATO
+// ═══════════════════════════════════════════════════════
+let state = {
+  tab: "paniere",
+  view: "list",
+  detailId: null,
+  pickingFor: null,
+  pickingBreakfastFor: null,
+  tagFilter: "tutti",
+  bFilter: "tutte",
+  recipes: JSON.parse(JSON.stringify(SEED_RECIPES)),
+  breakfasts: JSON.parse(JSON.stringify(SEED_BREAKFASTS)),
+  weekPlan: {},
+  weekBreakfast: {},
+  weekNotes: {},
+  pantry: [],
+  shopping: [],
+  newPantry: "",
+  newShopping: "",
+  deleteConfirm: null,
+  editId: null,
+  formData: null,
+  weekOffset: 0,
+  receiptLoading: false,
+  showApiKey: false,
+};
+
+// ═══════════════════════════════════════════════════════
+// STORAGE
+// ═══════════════════════════════════════════════════════
+// ── CONFIGURAZIONE CLOUDFLARE ──────────────────────────
+// Sostituisci questi due valori dopo aver creato il Worker
+const WORKER_URL = "https://meal-planner-api.michelecoppino.workers.dev";
+const AUTH_TOKEN  = "mealplanner2026";
+// ───────────────────────────────────────────────────────
+
+const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1",wn:"cm:wn:v1"};
+
+async function sGet(key) {
+  try {
+    const r = await fetch(`${WORKER_URL}/get?key=${encodeURIComponent(key)}`, {
+      headers: {"X-Auth": AUTH_TOKEN}
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.value ? JSON.parse(d.value) : null;
+  } catch { return null; }
+}
+
+async function sSet(key, val) {
+  try {
+    const r = await fetch(`${WORKER_URL}/set`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-Auth": AUTH_TOKEN},
+      body: JSON.stringify({key, value: JSON.stringify(val)})
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
+async function loadFromStorage() {
+  try {
+    const keys = ["r","w","p","s","b","wb","wn"];
+    for (const k of keys) {
+      const val = await sGet(SK[k]);
+      if (val !== null) {
+        if (k==="r") state.recipes = val;
+        else if (k==="w") state.weekPlan = val;
+        else if (k==="p") state.pantry = val;
+        else if (k==="s") state.shopping = val;
+        else if (k==="b") state.breakfasts = val;
+        else if (k==="wb") state.weekBreakfast = val;
+        else if (k==="wn") state.weekNotes = val;
+      }
+    }
+  } catch(e) {}
+}
+
+async function save(k, val) {
+  const ok = await sSet(SK[k], val);
+  if (!ok) {
+    const badge = document.getElementById("storage-badge");
+    if (badge) { badge.textContent = "⚠ Errore salvataggio"; badge.classList.remove("hidden"); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// UTILITÀ
+// ═══════════════════════════════════════════════════════
+function uid() { return Math.random().toString(36).slice(2,9); }
+function h(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function tagEl(tag) { return `<span class="tag tag-${h(tag)}">${h(TAGS[tag]?.label||tag)}</span>`; }
+function dotEl(tag, sz=8) { return `<div class="dot" style="width:${sz}px;height:${sz}px;background:${h(TAGS[tag]?.dot||'#888')}"></div>`; }
+function noticeEl(type, content) { return `<div class="notice notice-${type}">${content}</div>`; }
+function btnEl(id, variant, text, extra="") { return `<button class="btn btn-${variant}" onclick="${id}()" ${extra}>${text}</button>`; }
+
+function generateShoppingList() {
+  const ids = Object.values(state.weekPlan).filter(v => v && !v.startsWith("__custom__:"));
+  const agg = {};
+  for (const rid of ids) {
+    const r = state.recipes.find(x => x.id === rid);
+    if (!r) continue;
+    for (const ing of r.ing) {
+      const key = ing.n.toLowerCase().trim() + "::" + ing.u;
+      if (agg[key]) { if (ing.u !== "qb") agg[key].amount += ing.a; }
+      else agg[key] = {name: ing.n, amount: ing.a, unit: ing.u};
+    }
+  }
+  const pset = new Set(state.pantry.map(p => p.name.toLowerCase().trim()));
+  return Object.values(agg)
+    .filter(i => !pset.has(i.name.toLowerCase().trim()))
+    .sort((a,b) => a.name.localeCompare(b.name,"it"))
+    .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false, category:categorizeItem(i.name)}));
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER TABS
+// ═══════════════════════════════════════════════════════
+const TABS = [["paniere","Ricette"],["colazioni","Colazioni"],["settimana","Settimana"],["dispensa","Dispensa"],["spesa","Spesa"]];
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = TABS.map(([id,label]) =>
+    `<button class="tab ${state.tab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`
+  ).join("");
+}
+
+// ═══════════════════════════════════════════════════════
+// VISTE
+// ═══════════════════════════════════════════════════════
+function renderPaniere() {
+  const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
+  const visible = state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter);
+  const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
+  const grid = visible.length === 0 ? noticeEl("info","Nessuna ricetta trovata.") :
+    `<div class="recipe-grid">${visible.map(r => `
+      <div class="recipe-card" onclick="openDetail('${r.id}','recipe')">
+        <div class="recipe-card-bar" style="background:${h(TAGS[r.tag]?.dot||'#ccc')}"></div>
+        <div class="recipe-card-body">
+          ${tagEl(r.tag)}
+          <div class="recipe-name">${h(r.name)}</div>
+          <div class="recipe-sub">${h(r.grain)} · ${h(r.protein)}</div>
+          <div class="recipe-time">⏱ ${h(r.time)}</div>
+        </div>
+      </div>`).join("")}</div>`;
+  return `<div class="filter-bar">${filters}</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-outline" onclick="showView('addRecipe')">+ Aggiungi</button>
+      <button class="btn btn-outline" onclick="showView('importCSV')">↑ Importa CSV</button>
+    </div>${grid}`;
+}
+
+function renderColazioni() {
+  const opts = [["tutte","Tutte"],["mattina","☀️ Mattina"],["sera","🌙 Sera prima"]];
+  const visible = state.bFilter==="tutte" ? state.breakfasts : state.bFilter==="sera" ? state.breakfasts.filter(b=>b.prepAhead) : state.breakfasts.filter(b=>!b.prepAhead);
+  const filters = opts.map(([k,l]) => `<button class="filter-btn ${state.bFilter===k?'active':''}" onclick="setBFilter('${k}')">${l}</button>`).join("");
+  const cards = visible.map(b => {
+    const col = b.prepAhead ? "#7C6FF0" : "#E07C3B";
+    const bg = b.prepAhead ? "#EEEEFF" : "#FFF3EE";
+    const lbl = b.prepAhead ? "🌙 Sera prima" : "☀️ Mattina";
+    return `<div class="b-card" onclick="openDetail('${b.id}','breakfast')">
+      <div style="height:4px;background:${col}"></div>
+      <div style="padding:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span class="b-badge" style="background:${bg};color:${col}">${lbl}</span>
+          <span style="font-size:12px;color:#999">⏱ ${h(b.time)}</span>
+        </div>
+        <div style="font-size:14px;font-weight:600;color:#111;line-height:1.4">${h(b.name)}</div>
+      </div>
+    </div>`;
+  }).join("");
+  return `${noticeEl("info","Senza zuccheri aggiunti · avena, semi e frutta di stagione.")}
+    <div class="filter-bar">${filters}</div>
+    <button class="btn btn-outline mb16" onclick="showView('addBreakfast')">+ Aggiungi</button>
+    ${cards}`;
+}
+
+function renderSettimana() {
+  const filledDinner = Object.values(state.weekPlan).filter(Boolean).length;
+  const weekDates = getWeekDates(state.weekOffset);
+  const MONTHS = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
+  const days = DAYS.map((day, i) => {
+    const prevRaw = i > 0 ? (state.weekPlan[DAYS[i-1]] || null) : null;
+    const prevIsCustom = prevRaw && prevRaw.startsWith("__custom__:");
+    const prev = prevRaw && !prevIsCustom ? state.recipes.find(r => r.id === prevRaw) : null;
+    const prevName = prevIsCustom ? prevRaw.slice(11) : (prev ? prev.name : null);
+    const breakfastRaw = state.weekBreakfast[day] || null;
+    const isCustomBreakfast = breakfastRaw && breakfastRaw.startsWith("__custom__:");
+    const breakfast = !isCustomBreakfast ? (breakfastRaw ? state.breakfasts.find(b => b.id === breakfastRaw) : null) : null;
+    const customBreakfastName = isCustomBreakfast ? breakfastRaw.slice(11) : null;
+
+    // Se la colazione di DOMANI richiede prep serale, mostra promemoria su OGGI
+    const tomorrowBreakfastId = i < DAYS.length - 1 ? state.weekBreakfast[DAYS[i+1]] : null;
+    const tomorrowIsCustom = tomorrowBreakfastId && tomorrowBreakfastId.startsWith("__custom__:");
+    const tomorrowBreakfast = tomorrowBreakfastId && !tomorrowIsCustom ? state.breakfasts.find(b => b.id === tomorrowBreakfastId) : null;
+    const prepReminder = tomorrowBreakfast && tomorrowBreakfast.prepAhead
+      ? `<span title="Prepara stanotte la colazione di ${DAYS[i+1]}" style="margin-left:auto;font-size:13px;cursor:default" title="Prepara la colazione di domani stasera">🌙</span>`
+      : "";
+
+    const bCol = breakfast ? (breakfast.prepAhead ? "#7C6FF0" : "#E07C3B") : "#bbb";
+    const breakfastHtml = isCustomBreakfast
+      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          <div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customBreakfastName)}</span>
+          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeBreakfast('${day}')">×</button>
+        </div>`
+      : breakfast
+      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          <div style="width:8px;height:8px;border-radius:50%;background:${bCol};flex-shrink:0"></div>
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${breakfast.id}','breakfast')">${h(breakfast.name)}</span>
+          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeBreakfast('${day}')">×</button>
+        </div>`
+      : `<button class="btn btn-outline" onclick="openBreakfastPicker('${day}')">+ Aggiungi</button>`;
+
+    const dinnerRaw = state.weekPlan[day] || null;
+    const isCustomDinner = dinnerRaw && dinnerRaw.startsWith("__custom__:");
+    const dinner = !isCustomDinner ? (dinnerRaw ? state.recipes.find(r => r.id === dinnerRaw) : null) : null;
+    const customDinnerName = isCustomDinner ? dinnerRaw.slice(11) : null;
+    const dinnerHtml = isCustomDinner
+      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          <div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customDinnerName)}</span>
+          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeDinner('${day}')">×</button>
+        </div>`
+      : dinner
+      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+          ${dotEl(dinner.tag)}
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${dinner.id}','recipe')">${h(dinner.name)}</span>
+          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeDinner('${day}')">×</button>
+        </div>`
+      : `<button class="btn btn-outline" onclick="openPicker('${day}')">+ Aggiungi</button>`;
+
+    const dateObj = weekDates[i];
+    const dateStr = `${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]}`;
+    const isToday = dateObj.toDateString() === new Date().toDateString();
+    const usatoBtn = (dinner || isCustomDinner) ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
+    return `<div class="day-card">
+      <div class="day-header">
+        <div>
+          <div class="day-name"${isToday?' style="color:#E07C3B"':''}>${day}</div>
+          <div class="day-date">${dateStr}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">${usatoBtn}${prepReminder}</div>
+      </div>
+      <div class="day-row">
+        <span class="day-label">Colazione</span>
+        ${breakfastHtml}
+      </div>
+      <div class="day-row">
+        <span class="day-label">Pranzo</span>
+        ${prevName ? `<span style="font-size:12px;color:#888;font-style:italic">Avanzi: ${h(prevName)}</span>` : `<span style="font-size:12px;color:#ddd">—</span>`}
+      </div>
+      <div class="day-row">
+        <span class="day-label">Cena</span>
+        ${dinnerHtml}
+      </div>
+    </div>`;
+  }).join("");
+  const weekLabel = `${weekDates[0].getDate()} ${MONTHS[weekDates[0].getMonth()]} – ${weekDates[6].getDate()} ${MONTHS[weekDates[6].getMonth()]}`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset--;render()">←</button>
+      <span style="font-size:13px;font-weight:600;color:#555">${weekLabel}</span>
+      <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset++;render()">→</button>
+    </div>
+    ${noticeEl("info","La cena diventa automaticamente il <strong>pranzo del giorno dopo</strong>. 🌙 = prepara la colazione di domani stasera.")}
+    ${filledDinner===7 ? noticeEl("success","✓ Cene complete! Vai su <strong>Spesa</strong> per generare la lista.") : ""}
+    ${days}`;
+}
+
+function renderPicker() {
+  const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
+  const visible = state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter);
+  const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
+  const rows = visible.map(r => `
+    <div style="padding:12px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;align-items:center;gap:12px" onclick="assignDinner('${r.id}')">
+      ${dotEl(r.tag, 10)}
+      <div style="flex:1"><div style="font-size:14px;font-weight:600;color:#111;margin-bottom:3px">${h(r.name)}</div>
+      <div style="font-size:12px;color:#888">${h(r.grain)} · ${h(r.protein)} · ⏱ ${h(r.time)}</div></div>
+      ${tagEl(r.tag)}
+    </div>`).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.tab='settimana';render()">← Annulla</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Cena di ${h(state.pickingFor)}</h2>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input class="input" id="custom-dinner-input" placeholder="Scrivi un pasto personalizzato (es. Pizza, Cena fuori…)" style="flex:1">
+      <button class="btn btn-primary" onclick="assignCustomDinner()">Aggiungi</button>
+    </div>
+    <div class="filter-bar">${filters}</div>
+    <div class="card">${rows}</div>`;
+}
+
+function renderBreakfastPicker() {
+  const opts = [["tutte","Tutte"],["mattina","☀️ Mattina"],["sera","🌙 Sera prima"]];
+  const visible = state.bFilter==="tutte" ? state.breakfasts : state.bFilter==="sera" ? state.breakfasts.filter(b=>b.prepAhead) : state.breakfasts.filter(b=>!b.prepAhead);
+  const filters = opts.map(([k,l]) => `<button class="filter-btn ${state.bFilter===k?'active':''}" onclick="setBFilter('${k}');render()">${l}</button>`).join("");
+  const rows = visible.map(b => {
+    const col = b.prepAhead ? "#7C6FF0" : "#E07C3B";
+    const bg  = b.prepAhead ? "#EEEEFF" : "#FFF3EE";
+    const lbl = b.prepAhead ? "🌙 Sera prima" : "☀️ Mattina";
+    return `<div style="padding:12px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;align-items:center;gap:12px" onclick="assignBreakfast('${b.id}')">
+      <div style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0"></div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600;color:#111;margin-bottom:3px">${h(b.name)}</div>
+        <div style="font-size:12px;color:#888">⏱ ${h(b.time)}</div>
+      </div>
+      <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;background:${bg};color:${col};white-space:nowrap">${lbl}</span>
+    </div>`;
+  }).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.tab='settimana';render()">← Annulla</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Colazione di ${h(state.pickingBreakfastFor)}</h2>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input class="input" id="custom-breakfast-input" placeholder="Scrivi una colazione personalizzata (es. Cornetto, Brunch…)" style="flex:1">
+      <button class="btn btn-primary" onclick="assignCustomBreakfast()">Aggiungi</button>
+    </div>
+    <div class="filter-bar">${filters}</div>
+    <div class="card">${rows}</div>`;
+}
+
+function renderDispensa() {
+  const allIngs = [...new Set(state.recipes.flatMap(r => r.ing.map(i => i.n.trim()).filter(Boolean)))].sort((a,b)=>a.localeCompare(b,"it"));
+  const items = state.pantry.length === 0 ? noticeEl("info","Dispensa vuota. Aggiungi gli ingredienti sempre presenti in casa.") :
+    `<div class="card">${state.pantry.map((item,i) => `
+      <div class="pantry-item" style="${i<state.pantry.length-1?'border-bottom:1px solid #f5f5f5':''}">
+        <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
+        <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1" onclick="removePantry('${item.id}')">×</button>
+      </div>`).join("")}</div>
+    <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} elemento${state.pantry.length!==1?"i":""} in dispensa</p>`;
+  const suggestions = allIngs.filter(n => !state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase()));
+  const dropItems = suggestions.map(n => `<div onclick="selectPantryIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
+  const dropdown = `<div id="pantry-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${dropItems}</div>`;
+  const apiKey = localStorage.getItem('cm:apikey') || '';
+  const apiKeySection = state.showApiKey ? `<div style="background:#F8F8F8;border:1px solid #eee;border-radius:10px;padding:12px;margin-top:12px">
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:6px">Chiave API Anthropic (per leggere gli scontrini)</label>
+      <div style="display:flex;gap:8px">
+        <input class="input" id="apikey-input" type="password" value="${h(apiKey)}" placeholder="sk-ant-..." style="flex:1;font-family:monospace">
+        <button class="btn btn-primary" onclick="saveApiKey()">Salva</button>
+      </div>
+    </div>` : '';
+  const receiptBtn = state.receiptLoading
+    ? `<button class="btn btn-outline" disabled><span class="spinner"></span> Analisi...</button>`
+    : `<button class="btn btn-outline" onclick="document.getElementById('receipt-input').click()">📷 Carica scontrino</button>`;
+  return `${noticeEl("info","Gli ingredienti qui presenti vengono <strong>esclusi automaticamente</strong> dalla lista della spesa.")}
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      ${receiptBtn}
+      <button class="btn btn-outline" onclick="downloadPantry()">⬇ Scarica dispensa.txt</button>
+      <button class="btn btn-ghost" style="font-size:12px;color:#aaa" onclick="state.showApiKey=!state.showApiKey;render()">⚙ API key</button>
+    </div>
+    <input type="file" id="receipt-input" accept="image/*" style="display:none" onchange="handleReceiptFile(this)">
+    ${apiKeySection}
+    <div style="position:relative;margin-bottom:16px;margin-top:12px">
+      <div style="display:flex;gap:8px">
+        <input class="input" id="pantry-input" value="${h(state.newPantry)}" placeholder="Cerca o scrivi un ingrediente..." autocomplete="off"
+          oninput="state.newPantry=this.value;filterPantryDrop(this.value)"
+          onkeydown="if(event.key==='Enter'){addPantry();}"
+          onfocus="filterPantryDrop(this.value)"
+          style="flex:1">
+        <button class="btn btn-primary" onclick="addPantry()">Aggiungi</button>
+      </div>
+      ${dropdown}
+    </div>${items}`;
+}
+
+function renderSpesa() {
+  const usedCount = new Set(Object.values(state.weekPlan).filter(Boolean)).size;
+  const todo = state.shopping.filter(i => !i.checked);
+  const done = state.shopping.filter(i => i.checked);
+  const total = state.shopping.length;
+  const nChecked = done.length;
+  const pct = total > 0 ? Math.round((nChecked/total)*100) : 0;
+
+  const headerCard = `<div class="card" style="padding:12px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:600;color:#111;margin-bottom:3px">${usedCount>0?`${usedCount} ricett${usedCount===1?"a":"e"} nel piano`:"Nessuna ricetta pianificata"}</div>
+      <div style="font-size:12px;color:#888">${state.pantry.length>0?`${state.pantry.length} ingredienti dispensa esclusi`:"Nessuna dispensa configurata"}</div>
+    </div>
+    <button class="btn btn-primary" onclick="doGenerate()" ${usedCount===0?"disabled":""}>${state.shopping.length>0?"↻ Rigenera":"Genera lista"}</button>
+  </div>`;
+
+  const progressBar = total > 0 ? `<div style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px">
+      <span>${nChecked} di ${total} acquistati</span>
+      ${nChecked>0?`<button style="background:none;border:none;cursor:pointer;color:#888;font-size:12px;font-family:inherit" onclick="clearChecked()">Deseleziona tutti</button>`:""}
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+  </div>` : "";
+
+  const addExtra = `<div style="display:flex;gap:8px;margin-bottom:16px">
+    <input class="input" id="shop-input" value="${h(state.newShopping)}" placeholder="Aggiungi voce extra..." oninput="state.newShopping=this.value" onkeydown="if(event.key==='Enter')addShopItem()" style="flex:1">
+    <button class="btn btn-outline" onclick="addShopItem()">+</button>
+  </div>`;
+
+  if (state.shopping.length === 0) {
+    return headerCard + addExtra + noticeEl("info","Lista vuota. Pianifica la settimana e premi \"Genera lista\".");
+  }
+
+  const makeItem = (item) => `
+    <div class="check-item">
+      <div class="checkbox ${item.checked?'checked':''}" onclick="toggleCheck('${item.id}')">${item.checked?"✓":""}</div>
+      <span class="check-label ${item.checked?'done':''}">${h(item.name)}</span>
+      ${item.unit&&item.unit!=="qb"&&item.amount>0?`<span class="check-qty">${item.amount} ${h(item.unit)}</span>`:""}
+      ${item.unit==="qb"?`<span style="font-size:12px;color:#bbb">q.b.</span>`:""}
+      ${item.manual?`<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;padding:0 2px" onclick="removeShopItem('${item.id}')">×</button>`:""}
+    </div>`;
+
+  let todoSect = "";
+  if (todo.length > 0) {
+    const byCat = {};
+    for (const item of todo) {
+      const cat = item.category || "varie";
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(item);
+    }
+    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c =>
+      `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${byCat[c.id].map(makeItem).join("")}`
+    ).join("");
+    todoSect = `<div class="card mb12">${catSections}</div>`;
+  }
+
+  const doneSect = done.length > 0 ? `<div class="card" style="opacity:0.75">
+    <div class="section-hdr" style="color:#16A34A"><span>✓ Già comprati</span><span>${done.length}</span></div>
+    ${done.map(makeItem).join("")}
+  </div>` : "";
+
+  return headerCard + progressBar + addExtra + todoSect + doneSect;
+}
+
+function renderDetail() {
+  const isBreakfast = state.detailId && state.detailId.startsWith("b");
+  const item = isBreakfast ? state.breakfasts.find(b=>b.id===state.detailId) : state.recipes.find(r=>r.id===state.detailId);
+  if (!item) return "<p>Non trovato.</p>";
+  const accentColor = isBreakfast ? (item.prepAhead?"#7C6FF0":"#E07C3B") : (TAGS[item.tag]?.dot||"#333");
+  const badge = isBreakfast
+    ? `<span class="b-badge" style="background:${item.prepAhead?"#EEEEFF":"#FFF3EE"};color:${accentColor}">${item.prepAhead?"🌙 Sera prima":"☀️ Mattina"}</span>`
+    : tagEl(item.tag);
+  const sub = isBreakfast ? "" : ` · ${item.grain} · ${item.protein}`;
+  const delBtn = state.deleteConfirm === item.id
+    ? `<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:#B91C1C">Sicuro?</span><button class="btn btn-danger" onclick="confirmDelete('${item.id}')">Sì</button><button class="btn btn-ghost" onclick="state.deleteConfirm=null;render()">No</button></div>`
+    : `<div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-ghost" style="font-size:12px" onclick="startEdit('${item.id}')">✏️ Modifica</button>
+        <button class="btn btn-ghost" style="color:#B91C1C;font-size:12px" onclick="state.deleteConfirm='${item.id}';render()">Elimina</button>
+       </div>`;
+  const ings = item.ing.map(ing => `<div class="detail-ing-row">
+    <div style="width:5px;height:5px;border-radius:50%;background:${accentColor};flex-shrink:0"></div>
+    <span style="flex:1;color:#111">${h(ing.n)}</span>
+    <span style="color:#666">${ing.u==="qb"?"q.b.":`${ing.a} ${h(ing.u)}`}</span>
+  </div>`).join("");
+  const steps = item.steps.map((step,i) => `<div class="step-row">
+    <div class="step-num" style="background:${accentColor}">${i+1}</div>
+    <span style="color:#222">${h(step)}</span>
+  </div>`).join("");
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <button class="btn btn-ghost" onclick="showView('list')">← Indietro</button>
+    ${delBtn}
+  </div>
+  ${badge}
+  <h2 style="font-size:20px;font-weight:700;margin:10px 0 4px;line-height:1.3;color:#111">${h(item.name)}</h2>
+  <p style="font-size:13px;color:#666;margin:0 0 12px">⏱ ${h(item.time)}${sub}</p>
+  ${item.note ? noticeEl("warning","💡 " + h(item.note)) : ""}
+  <h3 style="font-size:15px;font-weight:600;margin:1rem 0 6px;color:#111">Ingredienti <span style="font-size:12px;font-weight:400;color:#888">(2 adulti + 1 bambino)</span></h3>
+  ${ings}
+  <h3 style="font-size:15px;font-weight:600;margin:1.4rem 0 6px;color:#111">Preparazione</h3>
+  ${steps}`;
+}
+
+function renderAddRecipe() {
+  const f = state.formData || {tag:"vegano",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
+  const tagOpts = Object.entries(TAGS).map(([k,v]) => `<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("");
+  const unitOpts = UNITS.map(u => `<option value="${u}">${u}</option>`).join("");
+  const ingRows = f.ings.map((ing,idx) => `<div class="ing-row">
+    <input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)">
+    <input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)">
+    <select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select>
+    <button class="ing-del" onclick="removeIng(${idx})">×</button>
+  </div>`).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.formData=null;render()">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Aggiungi ricetta</h2>
+    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" placeholder="Es. Bowl di quinoa..." oninput="updateForm('name',this.value)"></div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tipo</label><select class="input" onchange="updateForm('tag',this.value)">${tagOpts}</select></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" placeholder="30 min" oninput="updateForm('time',this.value)"></div>
+    </div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Cereale</label><input class="input" value="${h(f.grain)}" placeholder="Quinoa" oninput="updateForm('grain',this.value)"></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Proteina</label><input class="input" value="${h(f.protein)}" placeholder="Ceci" oninput="updateForm('protein',this.value)"></div>
+    </div>
+    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
+    <div class="form-group">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
+      ${ingRows}
+    </div>
+    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:130px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
+    <button class="btn btn-primary" onclick="saveRecipe()" ${!f.name.trim()?"disabled":""}>Salva ricetta</button>`;
+}
+
+function renderAddBreakfast() {
+  const f = state.formData || {name:"",time:"",prepAhead:false,note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
+  const ingRows = f.ings.map((ing,idx) => `<div class="ing-row">
+    <input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)">
+    <input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)">
+    <select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select>
+    <button class="ing-del" onclick="removeIng(${idx})">×</button>
+  </div>`).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.formData=null;render()">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Aggiungi colazione</h2>
+    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" placeholder="Es. Overnight oats..." oninput="updateForm('name',this.value)"></div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" placeholder="5 min" oninput="updateForm('time',this.value)"></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Preparazione</label>
+        <select class="input" onchange="updateForm('prepAhead',this.value==='sera')">
+          <option value="mattina" ${!f.prepAhead?"selected":""}>☀️ Mattina</option>
+          <option value="sera" ${f.prepAhead?"selected":""}>🌙 Sera prima</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
+    <div class="form-group">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
+      ${ingRows}
+    </div>
+    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:120px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
+    <button class="btn btn-primary" onclick="saveBreakfast()" ${!f.name.trim()?"disabled":""}>Salva</button>`;
+}
+
+function renderImportCSV() {
+  return `<button class="btn btn-ghost mb12" onclick="showView('list')">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Importa ricette CSV</h2>
+    ${noticeEl("info","<strong>Colonne:</strong> name, tag, time, grain, protein, note, ingredients, steps<br><strong>ingredients:</strong> nome:qtà:unità separati da |<br><strong>steps:</strong> passaggi separati da |")}
+    <div class="form-group mt12"><label>Carica file CSV</label><input type="file" accept=".csv,.txt" onchange="handleCSVFile(this)" style="font-size:13px"></div>
+    <div class="form-group"><label>Oppure incolla il testo</label><textarea class="input" id="csv-text" style="height:100px;resize:vertical;font-family:monospace;font-size:12px" oninput="previewCSV(this.value)" placeholder="name,tag,time,..."></textarea></div>
+    <div id="csv-preview"></div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER PRINCIPALE
+// ═══════════════════════════════════════════════════════
+function renderEditRecipe() {
+  const r = state.recipes.find(x => x.id === state.editId);
+  if (!r) return "<p>Non trovato.</p>";
+  const f = state.formData || {tag:r.tag, name:r.name, time:r.time, grain:r.grain, protein:r.protein, note:r.note||"", steps:r.steps.join("\n"), ings:r.ing.map(i=>({n:i.n,a:i.a,u:i.u}))};
+  const tagOpts = Object.entries(TAGS).map(([k,v])=>`<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("");
+  const ingRows = f.ings.map((ing,idx)=>`<div class="ing-row"><input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)"><input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)"><select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select><button class="ing-del" onclick="removeIng(${idx})">×</button></div>`).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('detail');state.formData=null;render()">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Modifica ricetta</h2>
+    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" oninput="updateForm('name',this.value)"></div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Stagione</label><select class="input" onchange="updateForm('tag',this.value)">${tagOpts}</select></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" oninput="updateForm('time',this.value)"></div>
+    </div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Cereale</label><input class="input" value="${h(f.grain)}" oninput="updateForm('grain',this.value)"></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Proteina</label><input class="input" value="${h(f.protein)}" oninput="updateForm('protein',this.value)"></div>
+    </div>
+    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
+    <div class="form-group">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
+      ${ingRows}
+    </div>
+    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:180px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
+    <button class="btn btn-primary" onclick="saveEditRecipe()" ${!f.name.trim()?"disabled":""}>Salva modifiche</button>`;
+}
+
+function renderEditBreakfast() {
+  const b = state.breakfasts.find(x => x.id === state.editId);
+  if (!b) return "<p>Non trovato.</p>";
+  const f = state.formData || {name:b.name, time:b.time, prepAhead:b.prepAhead, note:b.note||"", steps:b.steps.join("\n"), ings:b.ing.map(i=>({n:i.n,a:i.a,u:i.u}))};
+  const ingRows = f.ings.map((ing,idx)=>`<div class="ing-row"><input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)"><input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)"><select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select><button class="ing-del" onclick="removeIng(${idx})">×</button></div>`).join("");
+  return `<button class="btn btn-ghost mb12" onclick="showView('detail');state.formData=null;render()">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Modifica colazione</h2>
+    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" oninput="updateForm('name',this.value)"></div>
+    <div class="form-row mb12">
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" oninput="updateForm('time',this.value)"></div>
+      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Preparazione</label>
+        <select class="input" onchange="updateForm('prepAhead',this.value==='sera')">
+          <option value="mattina" ${!f.prepAhead?"selected":""}>☀️ Mattina</option>
+          <option value="sera" ${f.prepAhead?"selected":""}>🌙 Sera prima</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
+    <div class="form-group">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
+      ${ingRows}
+    </div>
+    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:180px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
+    <button class="btn btn-primary" onclick="saveEditBreakfast()" ${!f.name.trim()?"disabled":""}>Salva modifiche</button>`;
+}
+
+function render() {
+  renderTabs();
+  const el = document.getElementById("content");
+  if (state.view === "detail") { el.innerHTML = renderDetail(); return; }
+  if (state.view === "picker") { el.innerHTML = renderPicker(); return; }
+  if (state.view === "breakfastPicker") { el.innerHTML = renderBreakfastPicker(); return; }
+  if (state.view === "addRecipe") { el.innerHTML = renderAddRecipe(); return; }
+  if (state.view === "editRecipe") { el.innerHTML = renderEditRecipe(); return; }
+  if (state.view === "editBreakfast") { el.innerHTML = renderEditBreakfast(); return; }
+  if (state.view === "addBreakfast") { el.innerHTML = renderAddBreakfast(); return; }
+  if (state.view === "importCSV") { el.innerHTML = renderImportCSV(); return; }
+  if (state.tab === "paniere") el.innerHTML = renderPaniere();
+  else if (state.tab === "colazioni") el.innerHTML = renderColazioni();
+  else if (state.tab === "settimana") el.innerHTML = renderSettimana();
+  else if (state.tab === "dispensa") el.innerHTML = renderDispensa();
+  else if (state.tab === "spesa") el.innerHTML = renderSpesa();
+}
+
+// ═══════════════════════════════════════════════════════
+// AZIONI
+// ═══════════════════════════════════════════════════════
+function switchTab(t) { state.tab=t; state.view="list"; state.deleteConfirm=null; state.tagFilter="tutti"; render(); }
+function showView(v) { state.view=v; render(); }
+function setFilter(f) { state.tagFilter=f; render(); }
+function setBFilter(f) { state.bFilter=f; render(); }
+function openDetail(id, type) { state.detailId=id; state.view="detail"; state.deleteConfirm=null; render(); }
+function openPicker(day) { state.pickingFor=day; state.tagFilter="tutti"; state.view="picker"; render(); }
+function openBreakfastPicker(day) { state.pickingBreakfastFor=day; state.bFilter="tutte"; state.view="breakfastPicker"; render(); }
+
+function assignCustomDinner() {
+  const inp = document.getElementById("custom-dinner-input");
+  const val = (inp ? inp.value : "").trim();
+  if (!val) return;
+  state.weekPlan[state.pickingFor] = "__custom__:" + val;
+  save("w", state.weekPlan);
+  state.view = "list"; state.tab = "settimana"; render();
+}
+function assignCustomBreakfast() {
+  const inp = document.getElementById("custom-breakfast-input");
+  const val = (inp ? inp.value : "").trim();
+  if (!val) return;
+  state.weekBreakfast[state.pickingBreakfastFor] = "__custom__:" + val;
+  save("wb", state.weekBreakfast);
+  state.view = "list"; state.tab = "settimana"; render();
+}
+function removeDinner(day) { delete state.weekPlan[day]; save("w",state.weekPlan); render(); }
+function assignDinner(rid) { state.weekPlan[state.pickingFor]=rid; save("w",state.weekPlan); state.view="list"; state.tab="settimana"; render(); }
+function updateNote(day,val) { state.weekNotes[day]=val; save("wn",state.weekNotes); }
+function removeBreakfast(day) { delete state.weekBreakfast[day]; save("wb",state.weekBreakfast); render(); }
+function assignBreakfast(bid) { state.weekBreakfast[state.pickingBreakfastFor]=bid; save("wb",state.weekBreakfast); state.view="list"; state.tab="settimana"; render(); }
+
+function filterPantryDrop(val) {
+  const drop = document.getElementById("pantry-dropdown");
+  if (!drop) return;
+  const q = val.trim().toLowerCase();
+  const items = drop.querySelectorAll("div");
+  let visible = 0;
+  items.forEach(el => {
+    const match = !q || el.textContent.toLowerCase().includes(q);
+    el.style.display = match ? "" : "none";
+    if (match) visible++;
+  });
+  drop.style.display = visible > 0 ? "" : "none";
+}
+function selectPantryIng(name) {
+  state.newPantry = name;
+  const inp = document.getElementById("pantry-input");
+  if (inp) inp.value = name;
+  const drop = document.getElementById("pantry-dropdown");
+  if (drop) drop.style.display = "none";
+  addPantry();
+}
+function closePantryDrop(e) {
+  const drop = document.getElementById("pantry-dropdown");
+  const inp = document.getElementById("pantry-input");
+  if (drop && inp && !inp.contains(e.target) && !drop.contains(e.target)) {
+    drop.style.display = "none";
+  }
+}
+document.addEventListener("click", closePantryDrop);
+function addPantry() {
+  const n = state.newPantry.trim();
+  if (!n || state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase())) return;
+  state.pantry.push({id:uid(),name:n}); state.newPantry=""; save("p",state.pantry); render();
+}
+function removePantry(id) { state.pantry=state.pantry.filter(p=>p.id!==id); save("p",state.pantry); render(); }
+
+function doGenerate() { state.shopping=generateShoppingList(); save("s",state.shopping); render(); }
+function toggleCheck(id) { state.shopping=state.shopping.map(i=>i.id===id?{...i,checked:!i.checked}:i); save("s",state.shopping); render(); }
+function removeShopItem(id) { state.shopping=state.shopping.filter(i=>i.id!==id); save("s",state.shopping); render(); }
+function addShopItem() {
+  const n=state.newShopping.trim(); if(!n) return;
+  state.shopping.push({id:uid(),name:n,amount:0,unit:"",checked:false,manual:true,category:categorizeItem(n)}); state.newShopping=""; save("s",state.shopping); render();
+}
+function clearChecked() { state.shopping=state.shopping.map(i=>({...i,checked:false})); save("s",state.shopping); render(); }
+
+function startEdit(id) {
+  state.editId = id;
+  const isB = id.startsWith("b");
+  if (isB) {
+    const b = state.breakfasts.find(x => x.id === id);
+    state.formData = b ? {name:b.name, time:b.time, prepAhead:b.prepAhead, note:b.note||"", steps:b.steps.join("\n"), ings:b.ing.map(i=>({n:i.n,a:i.a,u:i.u}))} : null;
+  } else {
+    const r = state.recipes.find(x => x.id === id);
+    state.formData = r ? {tag:r.tag, name:r.name, time:r.time, grain:r.grain, protein:r.protein, note:r.note||"", steps:r.steps.join("\n"), ings:r.ing.map(i=>({n:i.n,a:i.a,u:i.u}))} : null;
+  }
+  state.view = isB ? "editBreakfast" : "editRecipe";
+  render();
+}
+function saveEditRecipe() {
+  const f = state.formData;
+  if (!f || !f.name.trim()) return;
+  state.recipes = state.recipes.map(r => r.id === state.editId
+    ? {...r, tag:f.tag, name:f.name.trim(), time:f.time, grain:f.grain, protein:f.protein, note:f.note,
+       ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),
+       steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)}
+    : r);
+  save("r", state.recipes);
+  state.formData = null;
+  state.view = "detail";
+  render();
+}
+function saveEditBreakfast() {
+  const f = state.formData;
+  if (!f || !f.name.trim()) return;
+  state.breakfasts = state.breakfasts.map(b => b.id === state.editId
+    ? {...b, name:f.name.trim(), time:f.time, prepAhead:!!f.prepAhead, note:f.note,
+       ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),
+       steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)}
+    : b);
+  save("b", state.breakfasts);
+  state.formData = null;
+  state.view = "detail";
+  render();
+}
+function confirmDelete(id) {
+  const isB = id.startsWith("b");
+  if (isB) { state.breakfasts=state.breakfasts.filter(b=>b.id!==id); save("b",state.breakfasts); }
+  else { state.recipes=state.recipes.filter(r=>r.id!==id); Object.keys(state.weekPlan).forEach(d=>{if(state.weekPlan[d]===id)delete state.weekPlan[d];}); save("r",state.recipes); save("w",state.weekPlan); }
+  state.deleteConfirm=null; state.view="list"; render();
+}
+
+function updateForm(k,v) { if(!state.formData)state.formData={tag:"vegano",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]}; state.formData[k]=v; }
+function updateIng(idx,k,v) { if(state.formData&&state.formData.ings[idx])state.formData.ings[idx][k]=v; }
+function addIng() { if(!state.formData)return; state.formData.ings.push({n:"",a:"",u:"g"}); render(); }
+function removeIng(idx) { if(!state.formData)return; state.formData.ings.splice(idx,1); render(); }
+
+function saveRecipe() {
+  const f=state.formData; if(!f||!f.name.trim())return;
+  const r={id:uid(),tag:f.tag,name:f.name.trim(),time:f.time,grain:f.grain,protein:f.protein,note:f.note,ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)};
+  state.recipes.push(r); save("r",state.recipes); state.formData=null; state.view="list"; render();
+}
+function saveBreakfast() {
+  const f=state.formData; if(!f||!f.name.trim())return;
+  const b={id:uid(),name:f.name.trim(),time:f.time,prepAhead:!!f.prepAhead,note:f.note,ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)};
+  state.breakfasts.push(b); save("b",state.breakfasts); state.formData=null; state.view="list"; render();
+}
+
+async function handleCSVFile(input) {
+  const f=input.files[0]; if(!f)return;
+  const text=await f.text();
+  document.getElementById("csv-text").value=text;
+  previewCSV(text);
+}
+function previewCSV(text) {
+  const el=document.getElementById("csv-preview"); if(!el)return;
+  if(!text.trim()){el.innerHTML="";return;}
+  try {
+    const lines=text.trim().split(/\r?\n/); if(lines.length<2){el.innerHTML=noticeEl("warning","Almeno 2 righe necessarie.");return;}
+    const header=lines[0].split(",").map(h=>h.trim());
+    const parsed=lines.slice(1).filter(l=>l.trim()).map(line=>{
+      const vals=line.split(","); const row={};
+      header.forEach((h,i)=>{row[h]=(vals[i]||"").trim().replace(/^"|"$/g,"");});
+      return{id:uid(),tag:row.tag||"vegano",name:row.name||"Senza nome",time:row.time||"",grain:row.grain||"",protein:row.protein||"",note:row.note||"",
+        ing:(row.ingredients||"").split("|").filter(Boolean).map(s=>{const[n,a,u]=s.split(":");return{n:(n||"").trim(),a:parseFloat(a)||0,u:(u||"qb").trim()};}),
+        steps:(row.steps||"").split("|").filter(Boolean).map(s=>s.trim())};
+    });
+    const preview=parsed.map(r=>`<div style="padding:8px 12px;background:#F5F5F5;border-radius:8px;font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:6px">${dotEl(r.tag)}<span style="flex:1">${h(r.name)}</span>${tagEl(r.tag)}</div>`).join("");
+    el.innerHTML=`<div class="mt12">${noticeEl("success",parsed.length+" ricett"+(parsed.length>1?"e":"a")+" pronta"+(parsed.length>1?"e":"")+" per l'importazione")}<div class="mt12">${preview}</div><button class="btn btn-primary mt12" onclick="importParsed()">Importa ${parsed.length} ricett${parsed.length>1?"e":"a"}</button></div>`;
+    el._parsed=parsed;
+  } catch(e){el.innerHTML=noticeEl("warning","Formato non valido: "+e.message);}
+}
+function importParsed() {
+  const el=document.getElementById("csv-preview"); if(!el||!el._parsed)return;
+  state.recipes.push(...el._parsed); save("r",state.recipes); state.view="list"; state.tab="paniere"; render();
+}
+
+// ═══════════════════════════════════════════════════════
+// NUOVE FUNZIONI
+// ═══════════════════════════════════════════════════════
+function markConsumed(day) {
+  const raw = state.weekPlan[day];
+  if (!raw || raw.startsWith("__custom__:")) return;
+  const recipe = state.recipes.find(r => r.id === raw);
+  if (!recipe) return;
+  if (!confirm(`Rimuovere gli ingredienti di "${recipe.name}" dalla dispensa?`)) return;
+  const ingNames = recipe.ing.map(i => i.n.toLowerCase().trim());
+  state.pantry = state.pantry.filter(p => {
+    const pn = p.name.toLowerCase().trim();
+    return !ingNames.some(n => pn.includes(n) || n.includes(pn));
+  });
+  save("p", state.pantry);
+  render();
+}
+
+function downloadPantry() {
+  if (state.pantry.length === 0) { alert("La dispensa è vuota."); return; }
+  const text = state.pantry.map(p => p.name).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
+  a.download = "dispensa.txt";
+  a.click();
+}
+
+function saveApiKey() {
+  const inp = document.getElementById("apikey-input");
+  if (!inp) return;
+  localStorage.setItem('cm:apikey', inp.value.trim());
+  state.showApiKey = false;
+  render();
+}
+
+async function resizeImage(file, maxDim=1568) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', 0.85);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handleReceiptFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const apiKey = localStorage.getItem('cm:apikey');
+  if (!apiKey) { state.showApiKey = true; render(); alert("Inserisci prima la chiave API Anthropic."); return; }
+  state.receiptLoading = true; render();
+  try {
+    const base64 = await resizeImage(file);
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({
+        model:'claude-haiku-4-5-20251001', max_tokens:512,
+        system:'Rispondi solo con un JSON array valido. Niente markdown, niente spiegazioni.',
+        messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
+          {type:'text',text:'Elenca i prodotti alimentari in questo scontrino come JSON array di stringhe in italiano (nomi semplici): ["uova", "latte", ...]'}
+        ]}]
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error?.message || resp.status);
+    const text = data.content[0].text;
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) throw new Error("Formato risposta non valido");
+    const items = JSON.parse(match[0]);
+    let added = 0;
+    for (const name of items) {
+      const n = String(name).trim();
+      if (n && !state.pantry.some(p => p.name.toLowerCase() === n.toLowerCase())) {
+        state.pantry.push({id:uid(), name:n}); added++;
+      }
+    }
+    save("p", state.pantry);
+    alert(`Aggiunti ${added} prodotti dalla dispensa.`);
+  } catch(e) {
+    alert("Errore: " + e.message);
+  } finally {
+    state.receiptLoading = false;
+    input.value = "";
+    render();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// AVVIO
+// ═══════════════════════════════════════════════════════
+loadFromStorage().then(()=>render()).catch(()=>render());
+</script>
+</body>
+</html>
