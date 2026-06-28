@@ -618,25 +618,22 @@ function renderDispensa() {
       if (!byCat[cat]) byCat[cat] = [];
       byCat[cat].push(item);
     }
-    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c => {
-      const rows = byCat[c.id].map(item => {
-        const qtyStr = item.qty ? `<span style="font-size:12px;font-weight:600;color:#777;white-space:nowrap">${item.qty}${item.unit ? ' '+h(item.unit) : ''}</span>` : '';
-        return `<div class="pantry-item">
-          <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
-          ${qtyStr}
-          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:8px" onclick="removePantry('${item.id}')">×</button>
-        </div>`;
-      }).join("");
-      return `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${rows}`;
-    }).join("");
-    const uncatRows = (byCat["varie"]||[]).map(item => {
-      const qtyStr = item.qty ? `<span style="font-size:12px;font-weight:600;color:#777;white-space:nowrap">${item.qty}${item.unit ? ' '+h(item.unit) : ''}</span>` : '';
+    const makePantryRow = item => {
+      const qtyInput = `<input type="number" min="0" step="0.1" value="${item.qty||''}" placeholder="qtà"
+        style="width:52px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit;text-align:center"
+        onchange="updatePantryQty('${item.id}',this.value)"
+        onclick="event.stopPropagation()">
+        <span style="font-size:12px;color:#aaa">${item.unit ? h(item.unit) : ''}</span>`;
       return `<div class="pantry-item">
         <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
-        ${qtyStr}
-        <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:8px" onclick="removePantry('${item.id}')">×</button>
+        ${qtyInput}
+        <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:4px" onclick="removePantry('${item.id}')">×</button>
       </div>`;
-    }).join("");
+    };
+    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c =>
+      `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${byCat[c.id].map(makePantryRow).join("")}`
+    ).join("");
+    const uncatRows = (byCat["varie"]||[]).map(makePantryRow).join("");
     itemsHtml = `<div class="card">${catSections}${uncatRows}</div>
       <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} elemento${state.pantry.length!==1?"i":""} in dispensa</p>`;
   }
@@ -684,7 +681,8 @@ pasta - 500 g`;
     ${noticeEl("info","Gli ingredienti qui presenti vengono <strong>esclusi automaticamente</strong> dalla lista della spesa.")}
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-outline" onclick="state.showReceiptModal=true;render()">📄 Carica scontrino</button>
-      <button class="btn btn-outline" onclick="downloadPantry()">⬇ Scarica dispensa.txt</button>
+      <button class="btn btn-outline" onclick="copyPantry()">📋 Copia dispensa</button>
+      <button class="btn btn-danger" onclick="clearPantry()">🗑 Svuota</button>
     </div>
     <input type="file" id="scontrino-input" accept=".txt,text/plain" style="display:none" onchange="handlePantryTxt(this)">
     <div style="position:relative;margin-bottom:16px">
@@ -1185,13 +1183,29 @@ function markConsumed(day) {
   render();
 }
 
-function downloadPantry() {
+function copyPantry() {
   if (state.pantry.length === 0) { alert("La dispensa è vuota."); return; }
   const text = state.pantry.map(p => p.qty ? `${p.name} - ${p.qty}${p.unit?' '+p.unit:''}` : p.name).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
-  a.download = "dispensa.txt";
-  a.click();
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('[onclick="copyPantry()"]');
+    if (btn) { btn.textContent = "✓ Copiata!"; setTimeout(() => { btn.textContent = "📋 Copia dispensa"; }, 2000); }
+  }).catch(() => alert("Errore copia"));
+}
+
+function clearPantry() {
+  if (state.pantry.length === 0) return;
+  if (!confirm(`Svuotare la dispensa (${state.pantry.length} elementi)?`)) return;
+  state.pantry = [];
+  save("p", state.pantry);
+  render();
+}
+
+function updatePantryQty(id, val) {
+  const item = state.pantry.find(p => p.id === id);
+  if (!item) return;
+  const n = parseFloat(val);
+  item.qty = isNaN(n) || n <= 0 ? null : n;
+  save("p", state.pantry);
 }
 
 function importPastedReceipt() {
