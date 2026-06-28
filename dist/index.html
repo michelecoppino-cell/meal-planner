@@ -669,9 +669,13 @@ pasta - 500 g`;
       <div style="flex:1;overflow-y:auto;padding:16px 20px">
         <div style="background:#F8F8F8;border:1px solid #E0E0E0;border-radius:10px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.6;color:#333;max-height:300px;overflow-y:auto">${h(promptText)}</div>
       </div>
-      <div style="padding:12px 20px;border-top:1px solid #eee;display:flex;gap:8px;flex-shrink:0">
+      <div style="padding:0 20px 12px">
+        <textarea id="receipt-paste" class="input" style="height:100px;resize:none;font-family:monospace;font-size:12px" placeholder="...oppure incolla qui la risposta di Claude"></textarea>
+      </div>
+      <div style="padding:0 20px 16px;border-top:1px solid #eee;padding-top:12px;display:flex;gap:8px;flex-shrink:0">
         <button class="btn btn-primary" style="flex:1" onclick="copyReceiptPrompt()">📋 Copia prompt</button>
-        <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('scontrino-input').click()">⬆ Carica .txt</button>
+        <button class="btn btn-outline" style="flex:1" onclick="importPastedReceipt()">⬆ Importa testo</button>
+        <button class="btn btn-ghost" style="font-size:12px;color:#aaa" onclick="document.getElementById('scontrino-input').click()">.txt</button>
       </div>
     </div>
   </div>` : '';
@@ -1188,6 +1192,34 @@ function downloadPantry() {
   a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
   a.download = "dispensa.txt";
   a.click();
+}
+
+function importPastedReceipt() {
+  const ta = document.getElementById("receipt-paste");
+  if (!ta || !ta.value.trim()) { alert("Incolla prima il testo nell'area di testo."); return; }
+  const lines = ta.value.split(/\r?\n/).filter(l => l.trim());
+  let added = 0, updated = 0;
+  for (const line of lines) {
+    const parts = line.split(/\s*[-–—]\s*/);
+    const name = (parts[0] || '').trim();
+    if (!name) continue;
+    const rest = (parts[1] || '').trim();
+    const m = rest.match(/^([\d.,]+)\s*(.*)$/);
+    const qty = m ? parseFloat(m[1].replace(',', '.')) : null;
+    const unit = m ? (m[2].trim() || 'pz') : '';
+    const existing = state.pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      if (qty !== null) existing.qty = (existing.qty || 0) + qty;
+      updated++;
+    } else {
+      state.pantry.push({id:uid(), name, qty: qty||null, unit, category: categorizeItem(name)});
+      added++;
+    }
+  }
+  save("p", state.pantry);
+  state.showReceiptModal = false;
+  render();
+  alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
 }
 
 function copyReceiptPrompt() {
