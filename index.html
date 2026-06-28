@@ -204,10 +204,23 @@ const INGREDIENT_CAT = {
   "succo di limone":"cereali",
 };
 
+function getCustomCatMap() {
+  try { return JSON.parse(localStorage.getItem('cm:catmap') || '{}'); } catch { return {}; }
+}
+function setCustomCatMap(map) {
+  localStorage.setItem('cm:catmap', JSON.stringify(map));
+}
+function getMergedCatMap() {
+  return Object.assign({}, INGREDIENT_CAT, getCustomCatMap());
+}
+function getAllKnownIngredients() {
+  return Object.keys(getMergedCatMap()).sort((a,b)=>a.localeCompare(b,"it"));
+}
 function categorizeItem(name) {
   const lower = name.toLowerCase().trim();
-  if (INGREDIENT_CAT[lower]) return INGREDIENT_CAT[lower];
-  for (const [key, cat] of Object.entries(INGREDIENT_CAT)) {
+  const map = getMergedCatMap();
+  if (map[lower]) return map[lower];
+  for (const [key, cat] of Object.entries(map)) {
     if (lower.includes(key) || key.includes(lower)) return cat;
   }
   return "varie";
@@ -295,8 +308,6 @@ let state = {
   editId: null,
   formData: null,
   weekOffset: 0,
-  receiptLoading: false,
-  showApiKey: false,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -390,7 +401,7 @@ function generateShoppingList() {
 // ═══════════════════════════════════════════════════════
 // RENDER TABS
 // ═══════════════════════════════════════════════════════
-const TABS = [["paniere","Ricette"],["colazioni","Colazioni"],["settimana","Settimana"],["dispensa","Dispensa"],["spesa","Spesa"]];
+const TABS = [["paniere","Ricette"],["colazioni","Colazioni"],["settimana","Settimana"],["dispensa","Dispensa"],["spesa","Spesa"],["impostazioni","Impostazioni"]];
 function renderTabs() {
   document.getElementById("tabs").innerHTML = TABS.map(([id,label]) =>
     `<button class="tab ${state.tab===id?'active':''}" onclick="switchTab('${id}')">${label}</button>`
@@ -588,37 +599,55 @@ function renderBreakfastPicker() {
 }
 
 function renderDispensa() {
-  const allIngs = [...new Set(state.recipes.flatMap(r => r.ing.map(i => i.n.trim()).filter(Boolean)))].sort((a,b)=>a.localeCompare(b,"it"));
-  const items = state.pantry.length === 0 ? noticeEl("info","Dispensa vuota. Aggiungi gli ingredienti sempre presenti in casa.") :
-    `<div class="card">${state.pantry.map((item,i) => `
-      <div class="pantry-item" style="${i<state.pantry.length-1?'border-bottom:1px solid #f5f5f5':''}">
-        <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
-        <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1" onclick="removePantry('${item.id}')">×</button>
-      </div>`).join("")}</div>
-    <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} elemento${state.pantry.length!==1?"i":""} in dispensa</p>`;
+  const allIngs = [...new Set([
+    ...state.recipes.flatMap(r => r.ing.map(i => i.n.trim()).filter(Boolean)),
+    ...getAllKnownIngredients()
+  ])].sort((a,b)=>a.localeCompare(b,"it"));
   const suggestions = allIngs.filter(n => !state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase()));
   const dropItems = suggestions.map(n => `<div onclick="selectPantryIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
   const dropdown = `<div id="pantry-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${dropItems}</div>`;
-  const apiKey = localStorage.getItem('cm:apikey') || '';
-  const apiKeySection = state.showApiKey ? `<div style="background:#F8F8F8;border:1px solid #eee;border-radius:10px;padding:12px;margin-top:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:6px">Chiave API Anthropic (per leggere gli scontrini)</label>
-      <div style="display:flex;gap:8px">
-        <input class="input" id="apikey-input" type="password" value="${h(apiKey)}" placeholder="sk-ant-..." style="flex:1;font-family:monospace">
-        <button class="btn btn-primary" onclick="saveApiKey()">Salva</button>
-      </div>
-    </div>` : '';
-  const receiptBtn = state.receiptLoading
-    ? `<button class="btn btn-outline" disabled><span class="spinner"></span> Analisi...</button>`
-    : `<button class="btn btn-outline" onclick="document.getElementById('receipt-input').click()">📷 Carica scontrino</button>`;
+
+  let itemsHtml = "";
+  if (state.pantry.length === 0) {
+    itemsHtml = noticeEl("info","Dispensa vuota. Aggiungi ingredienti manualmente o carica un file .txt dallo scontrino.");
+  } else {
+    const byCat = {};
+    for (const item of state.pantry) {
+      const cat = item.category || categorizeItem(item.name);
+      if (!byCat[cat]) byCat[cat] = [];
+      byCat[cat].push(item);
+    }
+    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c => {
+      const rows = byCat[c.id].map(item => {
+        const qtyStr = item.qty ? `<span style="font-size:12px;font-weight:600;color:#777;white-space:nowrap">${item.qty}${item.unit ? ' '+h(item.unit) : ''}</span>` : '';
+        return `<div class="pantry-item">
+          <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
+          ${qtyStr}
+          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:8px" onclick="removePantry('${item.id}')">×</button>
+        </div>`;
+      }).join("");
+      return `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${rows}`;
+    }).join("");
+    const uncatRows = (byCat["varie"]||[]).map(item => {
+      const qtyStr = item.qty ? `<span style="font-size:12px;font-weight:600;color:#777;white-space:nowrap">${item.qty}${item.unit ? ' '+h(item.unit) : ''}</span>` : '';
+      return `<div class="pantry-item">
+        <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
+        ${qtyStr}
+        <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:8px" onclick="removePantry('${item.id}')">×</button>
+      </div>`;
+    }).join("");
+    itemsHtml = `<div class="card">${catSections}${uncatRows}</div>
+      <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} elemento${state.pantry.length!==1?"i":""} in dispensa</p>`;
+  }
+
   return `${noticeEl("info","Gli ingredienti qui presenti vengono <strong>esclusi automaticamente</strong> dalla lista della spesa.")}
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      ${receiptBtn}
+      <button class="btn btn-outline" onclick="document.getElementById('scontrino-input').click()">📄 Carica scontrino.txt</button>
       <button class="btn btn-outline" onclick="downloadPantry()">⬇ Scarica dispensa.txt</button>
-      <button class="btn btn-ghost" style="font-size:12px;color:#aaa" onclick="state.showApiKey=!state.showApiKey;render()">⚙ API key</button>
     </div>
-    <input type="file" id="receipt-input" accept="image/*" style="display:none" onchange="handleReceiptFile(this)">
-    ${apiKeySection}
-    <div style="position:relative;margin-bottom:16px;margin-top:12px">
+    <input type="file" id="scontrino-input" accept=".txt,text/plain" style="display:none" onchange="handlePantryTxt(this)">
+    ${noticeEl("info","<strong>Formato scontrino.txt:</strong> una riga per prodotto — <code>nome prodotto - quantità unità</code><br>Es: <code>uova - 6 pz</code> · <code>latte - 1 l</code> · <code>pasta - 500 g</code>")}
+    <div style="position:relative;margin-bottom:16px">
       <div style="display:flex;gap:8px">
         <input class="input" id="pantry-input" value="${h(state.newPantry)}" placeholder="Cerca o scrivi un ingrediente..." autocomplete="off"
           oninput="state.newPantry=this.value;filterPantryDrop(this.value)"
@@ -628,7 +657,7 @@ function renderDispensa() {
         <button class="btn btn-primary" onclick="addPantry()">Aggiungi</button>
       </div>
       ${dropdown}
-    </div>${items}`;
+    </div>${itemsHtml}`;
 }
 
 function renderSpesa() {
@@ -650,14 +679,27 @@ function renderSpesa() {
   const progressBar = total > 0 ? `<div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px">
       <span>${nChecked} di ${total} acquistati</span>
-      ${nChecked>0?`<button style="background:none;border:none;cursor:pointer;color:#888;font-size:12px;font-family:inherit" onclick="clearChecked()">Deseleziona tutti</button>`:""}
+      <div style="display:flex;gap:12px">
+        ${nChecked>0?`<button style="background:none;border:none;cursor:pointer;color:#888;font-size:12px;font-family:inherit" onclick="clearChecked()">Deseleziona</button>`:""}
+        ${nChecked>0?`<button style="background:none;border:none;cursor:pointer;color:#B91C1C;font-size:12px;font-family:inherit" onclick="removeCheckedItems()">🗑 Svuota comprati</button>`:""}
+      </div>
     </div>
     <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
   </div>` : "";
 
-  const addExtra = `<div style="display:flex;gap:8px;margin-bottom:16px">
-    <input class="input" id="shop-input" value="${h(state.newShopping)}" placeholder="Aggiungi voce extra..." oninput="state.newShopping=this.value" onkeydown="if(event.key==='Enter')addShopItem()" style="flex:1">
-    <button class="btn btn-outline" onclick="addShopItem()">+</button>
+  const shopIngs = getAllKnownIngredients();
+  const shopDropItems = shopIngs.map(n => `<div onclick="selectShopIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
+  const shopDropdown = `<div id="shop-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${shopDropItems}</div>`;
+  const addExtra = `<div style="position:relative;margin-bottom:16px">
+    <div style="display:flex;gap:8px">
+      <input class="input" id="shop-input" value="${h(state.newShopping)}" placeholder="Aggiungi voce extra..." autocomplete="off"
+        oninput="state.newShopping=this.value;filterShopDrop(this.value)"
+        onkeydown="if(event.key==='Enter'){addShopItem();closeShopDrop()}"
+        onfocus="filterShopDrop(this.value)"
+        style="flex:1">
+      <button class="btn btn-outline" onclick="addShopItem();closeShopDrop()">+</button>
+    </div>
+    ${shopDropdown}
   </div>`;
 
   if (state.shopping.length === 0) {
@@ -872,6 +914,43 @@ function render() {
   else if (state.tab === "settimana") el.innerHTML = renderSettimana();
   else if (state.tab === "dispensa") el.innerHTML = renderDispensa();
   else if (state.tab === "spesa") el.innerHTML = renderSpesa();
+  else if (state.tab === "impostazioni") el.innerHTML = renderImpostazioni();
+}
+
+function renderImpostazioni() {
+  const customMap = getCustomCatMap();
+  const merged = getMergedCatMap();
+  const catOpts = SHOP_CATS.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
+
+  const sections = SHOP_CATS.map(cat => {
+    const entries = Object.entries(merged).filter(([,v]) => v === cat.id);
+    if (entries.length === 0) return '';
+    const rows = entries.map(([name]) => {
+      const isCustom = customMap[name] === cat.id;
+      const isDefaultOverridden = customMap[name] && customMap[name] !== INGREDIENT_CAT[name];
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #f5f5f5">
+        <span style="flex:1;font-size:13px;color:${isCustom?'#1E4D8C':'#111'}">${h(name)}${isCustom?'<span style="font-size:10px;color:#3A6EA5;margin-left:4px">★</span>':''}</span>
+        <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${h(name)}',this.value)">${SHOP_CATS.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
+        ${customMap[name]?`<button style="background:none;border:none;color:#ccc;cursor:pointer;font-size:16px" onclick="resetCatItem('${h(name)}')">×</button>`:'<span style="width:20px"></span>'}
+      </div>`;
+    }).join("");
+    return `<div class="card mb12">
+      <div class="cat-hdr"><span>${cat.label}</span><span style="font-weight:400;color:#aaa">${entries.length}</span></div>
+      ${rows}
+    </div>`;
+  }).join("");
+
+  return `${noticeEl("info","Le regole qui sotto determinano in quale categoria finisce ogni ingrediente nella <strong>Dispensa</strong> e nella <strong>Spesa</strong>. Le voci con ★ sono personalizzazioni tue. Puoi spostare qualsiasi ingrediente con il menu a tendina.")}
+    <div class="card mb16" style="padding:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Aggiungi regola</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input class="input" id="new-cat-name" placeholder="Nome ingrediente" style="flex:1;min-width:120px">
+        <select class="input" id="new-cat-cat" style="flex:1;min-width:120px">${catOpts}</select>
+        <button class="btn btn-primary" onclick="addCatRule()">Aggiungi</button>
+      </div>
+    </div>
+    ${Object.keys(customMap).length > 0 ? `<button class="btn btn-outline mb12" onclick="if(confirm('Ripristinare tutte le regole predefinite?')){setCustomCatMap({});render()}">↺ Ripristina default</button>` : ''}
+    ${sections}`;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -936,10 +1015,15 @@ function closePantryDrop(e) {
   }
 }
 document.addEventListener("click", closePantryDrop);
+document.addEventListener("click", e => {
+  const drop = document.getElementById("shop-dropdown");
+  const inp = document.getElementById("shop-input");
+  if (drop && inp && !inp.contains(e.target) && !drop.contains(e.target)) drop.style.display = "none";
+});
 function addPantry() {
   const n = state.newPantry.trim();
   if (!n || state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase())) return;
-  state.pantry.push({id:uid(),name:n}); state.newPantry=""; save("p",state.pantry); render();
+  state.pantry.push({id:uid(),name:n,category:categorizeItem(n)}); state.newPantry=""; save("p",state.pantry); render();
 }
 function removePantry(id) { state.pantry=state.pantry.filter(p=>p.id!==id); save("p",state.pantry); render(); }
 
@@ -1063,81 +1147,102 @@ function markConsumed(day) {
 
 function downloadPantry() {
   if (state.pantry.length === 0) { alert("La dispensa è vuota."); return; }
-  const text = state.pantry.map(p => p.name).join("\n");
+  const text = state.pantry.map(p => p.qty ? `${p.name} - ${p.qty}${p.unit?' '+p.unit:''}` : p.name).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], {type:"text/plain"}));
   a.download = "dispensa.txt";
   a.click();
 }
 
-function saveApiKey() {
-  const inp = document.getElementById("apikey-input");
-  if (!inp) return;
-  localStorage.setItem('cm:apikey', inp.value.trim());
-  state.showApiKey = false;
-  render();
-}
-
-async function resizeImage(file, maxDim=1568) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result.split(',')[1]);
-        reader.readAsDataURL(blob);
-      }, 'image/jpeg', 0.85);
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-async function handleReceiptFile(input) {
+function handlePantryTxt(input) {
   const file = input.files[0]; if (!file) return;
-  const apiKey = localStorage.getItem('cm:apikey');
-  if (!apiKey) { state.showApiKey = true; render(); alert("Inserisci prima la chiave API Anthropic."); return; }
-  state.receiptLoading = true; render();
-  try {
-    const base64 = await resizeImage(file);
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({
-        model:'claude-haiku-4-5-20251001', max_tokens:512,
-        system:'Rispondi solo con un JSON array valido. Niente markdown, niente spiegazioni.',
-        messages:[{role:'user',content:[
-          {type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},
-          {type:'text',text:'Elenca i prodotti alimentari in questo scontrino come JSON array di stringhe in italiano (nomi semplici): ["uova", "latte", ...]'}
-        ]}]
-      })
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error?.message || resp.status);
-    const text = data.content[0].text;
-    const match = text.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error("Formato risposta non valido");
-    const items = JSON.parse(match[0]);
-    let added = 0;
-    for (const name of items) {
-      const n = String(name).trim();
-      if (n && !state.pantry.some(p => p.name.toLowerCase() === n.toLowerCase())) {
-        state.pantry.push({id:uid(), name:n}); added++;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
+    let added = 0, updated = 0;
+    for (const line of lines) {
+      const parts = line.split(/\s*[-–—]\s*/);
+      const name = (parts[0] || '').trim();
+      if (!name) continue;
+      const rest = (parts[1] || '').trim();
+      const m = rest.match(/^([\d.,]+)\s*(.*)$/);
+      const qty = m ? parseFloat(m[1].replace(',', '.')) : null;
+      const unit = m ? (m[2].trim() || 'pz') : '';
+      const existing = state.pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (existing) {
+        if (qty !== null) existing.qty = (existing.qty || 0) + qty;
+        updated++;
+      } else {
+        state.pantry.push({id:uid(), name, qty: qty||null, unit, category: categorizeItem(name)});
+        added++;
       }
     }
     save("p", state.pantry);
-    alert(`Aggiunti ${added} prodotti dalla dispensa.`);
-  } catch(e) {
-    alert("Errore: " + e.message);
-  } finally {
-    state.receiptLoading = false;
     input.value = "";
     render();
-  }
+    alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
+  };
+  reader.readAsText(file);
+}
+
+function removeCheckedItems() {
+  if (!confirm("Rimuovere tutti gli articoli già comprati?")) return;
+  state.shopping = state.shopping.filter(i => !i.checked);
+  save("s", state.shopping);
+  render();
+}
+
+function filterShopDrop(val) {
+  const drop = document.getElementById("shop-dropdown");
+  if (!drop) return;
+  const q = val.trim().toLowerCase();
+  if (!q) { drop.style.display = "none"; return; }
+  const items = drop.querySelectorAll("div");
+  let visible = 0;
+  items.forEach(el => {
+    const match = el.textContent.toLowerCase().includes(q);
+    el.style.display = match ? "" : "none";
+    if (match) visible++;
+  });
+  drop.style.display = visible > 0 ? "" : "none";
+}
+
+function selectShopIng(name) {
+  state.newShopping = name;
+  const inp = document.getElementById("shop-input");
+  if (inp) inp.value = name;
+  closeShopDrop();
+  addShopItem();
+}
+
+function closeShopDrop() {
+  const drop = document.getElementById("shop-dropdown");
+  if (drop) drop.style.display = "none";
+}
+
+function addCatRule() {
+  const name = (document.getElementById("new-cat-name")?.value || "").trim().toLowerCase();
+  const cat = document.getElementById("new-cat-cat")?.value;
+  if (!name || !cat) return;
+  const map = getCustomCatMap();
+  map[name] = cat;
+  setCustomCatMap(map);
+  document.getElementById("new-cat-name").value = "";
+  render();
+}
+
+function moveCatItem(name, newCat) {
+  const map = getCustomCatMap();
+  map[name.toLowerCase()] = newCat;
+  setCustomCatMap(map);
+  render();
+}
+
+function resetCatItem(name) {
+  const map = getCustomCatMap();
+  delete map[name.toLowerCase()];
+  setCustomCatMap(map);
+  render();
 }
 
 // ═══════════════════════════════════════════════════════
