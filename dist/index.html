@@ -638,16 +638,17 @@ function renderDispensa() {
   } else {
     const byCat = {};
     for (const item of state.pantry) {
-      const cat = item.category || categorizeItem(item.name);
+      const cat = categorizeItem(item.name);
       if (!byCat[cat]) byCat[cat] = [];
       byCat[cat].push(item);
     }
     const makePantryRow = item => {
-      const qtyInput = `<input type="number" min="0" step="0.1" value="${item.qty||''}" placeholder="—"
-        style="width:52px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit;text-align:center"
-        onchange="updatePantryQty('${item.id}',this.value)"
-        onclick="event.stopPropagation()">
-        <span style="font-size:12px;color:#aaa;min-width:16px">${item.unit ? h(item.unit) : ''}</span>`;
+      const step = (item.unit === 'g' || item.unit === 'ml') ? 50 : (item.unit === 'kg' || item.unit === 'l') ? 0.5 : 1;
+      const qtyInput = `<div style="display:flex;align-items:center;gap:4px" onclick="event.stopPropagation()">
+        <button style="width:26px;height:26px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="adjustPantryQty('${item.id}',${-step})">−</button>
+        <span style="min-width:36px;text-align:center;font-size:13px;font-weight:600;color:#555">${item.qty != null ? item.qty : '—'}<span style="font-size:11px;font-weight:400;color:#aaa;margin-left:2px">${item.unit ? h(item.unit) : ''}</span></span>
+        <button style="width:26px;height:26px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="adjustPantryQty('${item.id}',${step})">+</button>
+      </div>`;
       return `<div class="pantry-item">
         <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
         ${qtyInput}
@@ -1240,12 +1241,14 @@ function togglePantryCat(catId) {
   render();
 }
 
-function updatePantryQty(id, val) {
+function adjustPantryQty(id, delta) {
   const item = state.pantry.find(p => p.id === id);
   if (!item) return;
-  const n = parseFloat(val);
-  item.qty = isNaN(n) || n <= 0 ? null : n;
+  const current = item.qty != null ? item.qty : 0;
+  const next = Math.max(0, Math.round((current + delta) * 100) / 100);
+  item.qty = next === 0 ? null : next;
   save("p", state.pantry);
+  render();
 }
 
 function importPastedReceipt() {
