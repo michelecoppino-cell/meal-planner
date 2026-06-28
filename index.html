@@ -202,6 +202,29 @@ const INGREDIENT_CAT = {
   "estratto di vaniglia":"cereali","cannella":"cereali","noce moscata":"cereali",
   "curcuma":"cereali","cumino in polvere":"cereali","cumino":"cereali","paprika affumicata":"cereali",
   "succo di limone":"cereali",
+  // frutta e verdura
+  "radicchio":"frutta","cetrioli":"frutta","pesche":"frutta","meloni":"frutta","anguria":"frutta",
+  "pere":"frutta","arance":"frutta","kiwi":"frutta","uva":"frutta","fragole":"frutta","ciliegie":"frutta",
+  // pasta e sughi
+  "fusilli":"pasta","spaghetti":"pasta","rigatoni":"pasta","penne":"pasta","lasagne":"pasta",
+  "noodles a nido":"pasta","noodles":"pasta","pesto":"pasta","amido di mais":"pasta",
+  "farina macinata a pietra tipo 1":"pasta","farina di mais giallo":"pasta","farina 00":"pasta",
+  // olio e legumi
+  "maionese":"olio","olive taggiasche":"olio","olive":"olio","senape":"olio",
+  "glassa all'aceto balsamico":"olio","aceto balsamico":"olio","olio di semi di arachide":"olio",
+  "soia granulare":"olio","tofu affumicato":"olio",
+  // frigo
+  "tonno in pezzi":"frigo","tonno":"frigo","panna vegetale":"frigo","panna":"frigo",
+  "prosciutto cotto":"frigo","burro":"frigo","mozzarella":"frigo","parmigiano":"frigo",
+  // cereali e frutta secca
+  "cornflakes":"cereali","fette biscottate":"cereali","pinoli":"cereali","semi di uva":"cereali",
+  "cocco grattugiato":"cereali","granola":"cereali","muesli":"cereali","fiocchi di farro":"cereali",
+  // snack
+  "cioccolato":"snack","cioccolato fondente":"snack","cioccolato al latte":"snack",
+  "biscotti":"snack","crackers":"snack","patatine":"snack","popcorn":"snack",
+  // varie
+  "caffè":"varie","tè":"varie","tisana":"varie","sale":"varie","zucchero":"varie","miele":"varie",
+  "lievito":"varie","lievito per dolci":"varie","bicarbonato":"varie",
 };
 
 function getCustomCatMap() {
@@ -309,6 +332,7 @@ let state = {
   formData: null,
   weekOffset: 0,
   showReceiptModal: false,
+  openPantryCats: {},
 };
 
 // ═══════════════════════════════════════════════════════
@@ -619,22 +643,33 @@ function renderDispensa() {
       byCat[cat].push(item);
     }
     const makePantryRow = item => {
-      const qtyInput = `<input type="number" min="0" step="0.1" value="${item.qty||''}" placeholder="qtà"
+      const qtyInput = `<input type="number" min="0" step="0.1" value="${item.qty||''}" placeholder="—"
         style="width:52px;padding:3px 5px;border:1px solid #ddd;border-radius:6px;font-size:12px;font-family:inherit;text-align:center"
         onchange="updatePantryQty('${item.id}',this.value)"
         onclick="event.stopPropagation()">
-        <span style="font-size:12px;color:#aaa">${item.unit ? h(item.unit) : ''}</span>`;
+        <span style="font-size:12px;color:#aaa;min-width:16px">${item.unit ? h(item.unit) : ''}</span>`;
       return `<div class="pantry-item">
         <span style="flex:1;font-size:14px;color:#111">${h(item.name)}</span>
         ${qtyInput}
         <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:4px" onclick="removePantry('${item.id}')">×</button>
       </div>`;
     };
-    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c =>
-      `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${byCat[c.id].map(makePantryRow).join("")}`
-    ).join("");
-    const uncatRows = (byCat["varie"]||[]).map(makePantryRow).join("");
-    itemsHtml = `<div class="card">${catSections}${uncatRows}</div>
+    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c => {
+      const open = !!state.openPantryCats[c.id];
+      const rows = open ? byCat[c.id].map(makePantryRow).join("") : "";
+      return `<div class="cat-hdr" style="cursor:pointer" onclick="togglePantryCat('${c.id}')">
+        <span>${open?'▾':'▸'} ${c.label}</span>
+        <span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span>
+      </div>${rows}`;
+    }).join("");
+    const varieItems = byCat["varie"] || [];
+    const varieOpen = !!state.openPantryCats["varie"];
+    const varieSection = varieItems.length > 0 ? `<div class="cat-hdr" style="cursor:pointer" onclick="togglePantryCat('varie')">
+      <span>${varieOpen?'▾':'▸'} 🗂 Varie</span>
+      <span style="font-weight:400;color:#aaa">${varieItems.length}</span>
+    </div>${varieOpen ? varieItems.map(makePantryRow).join("") : ""}` : "";
+    const uncatRows = "";
+    itemsHtml = `<div class="card">${varieSection}${catSections}</div>
       <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} elemento${state.pantry.length!==1?"i":""} in dispensa</p>`;
   }
 
@@ -1197,6 +1232,11 @@ function clearPantry() {
   if (!confirm(`Svuotare la dispensa (${state.pantry.length} elementi)?`)) return;
   state.pantry = [];
   save("p", state.pantry);
+  render();
+}
+
+function togglePantryCat(catId) {
+  state.openPantryCats[catId] = !state.openPantryCats[catId];
   render();
 }
 
