@@ -655,7 +655,7 @@ function renderDispensa() {
         <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:4px" onclick="removePantry('${item.id}')">×</button>
       </div>`;
     };
-    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c => {
+    const catSections = SHOP_CATS.filter(c => byCat[c.id] && c.id !== "varie").map(c => {
       const open = !!state.openPantryCats[c.id];
       const rows = open ? byCat[c.id].map(makePantryRow).join("") : "";
       return `<div class="cat-hdr" style="cursor:pointer" onclick="togglePantryCat('${c.id}')">
