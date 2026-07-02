@@ -31,7 +31,7 @@ Senza token l'app funziona comunque in locale (badge "Sync non attiva").
 
 - Piano settimanale per-settimana (frecce ← → navigano settimane indipendenti) con riempimento automatico stagionale
 - Lista spesa generata da cene **e colazioni**, al netto della dispensa (sottrae le quantità quando note)
-- **Scorte desiderate** (Impostazioni): gli alimenti sotto la soglia desiderata finiscono in lista spesa con l'etichetta "scorta"
+- **Scorte desiderate** (Impostazioni → lista ingredienti, colonna 📦): gli alimenti sotto la soglia desiderata finiscono in lista spesa con l'etichetta "scorta"; filtro "Con scorta impostata" e ricerca per trovarli al volo
 - **Scadenze**: data di scadenza per alimento in Dispensa (📅), avviso evidenziato e ⚠️ sul tab; giorni di preavviso configurabili
 - Dispensa con categorie, import da scontrino (via prompt per Claude), quantità +/-
 - Ricerca ricette per nome o ingrediente, scala porzioni ½×/1×/2×

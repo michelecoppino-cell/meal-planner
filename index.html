@@ -327,6 +327,8 @@ let state = {
   tagFilter: "tutti",
   bFilter: "tutte",
   searchQuery: "",
+  catFilter: "tutte",
+  catSearch: "",
   portionScale: 1,
   recipes: JSON.parse(JSON.stringify(SEED_RECIPES)),
   breakfasts: JSON.parse(JSON.stringify(SEED_BREAKFASTS)),
@@ -334,6 +336,7 @@ let state = {
   weekBreakfast: {},
   pantry: [],
   shopping: [],
+  desired: {},
   newPantry: "",
   newShopping: "",
   deleteConfirm: null,
@@ -356,8 +359,9 @@ const WORKER_URL = "https://meal-planner-api.michelecoppino.workers.dev";
 function getToken() { try { return localStorage.getItem("cm:token") || ""; } catch { return ""; } }
 // ───────────────────────────────────────────────────────
 
-const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1"};
-const STORE_KEYS = ["r","w","p","s","b","wb"];
+const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1",d:"cm:d:v1"};
+// "d" (scorte desiderate) prima di "p": il caricamento della dispensa vi aggiunge i default
+const STORE_KEYS = ["r","w","b","wb","d","p","s"];
 
 async function sGet(key) {
   const token = getToken();
@@ -389,8 +393,12 @@ function applyVal(k, val) {
   if (val === null || val === undefined) return;
   if (k==="r") state.recipes = val;
   else if (k==="w") state.weekPlan = migrateWeekData(val);
-  // Migrazione scorte: la quantità desiderata parte dalla quantità attuale
-  else if (k==="p") state.pantry = val.map(p => (p.desired === undefined && p.qty != null) ? {...p, desired: p.qty} : p);
+  else if (k==="d") state.desired = (val && typeof val === "object" && !Array.isArray(val)) ? val : {};
+  else if (k==="p") {
+    state.pantry = val;
+    // Default scorte: la quantità desiderata parte da quella che hai ora
+    for (const p of val) seedDesired(p.name, p.desired != null ? p.desired : p.qty, p.unit);
+  }
   else if (k==="s") state.shopping = val.map(i => i.manual ? {...i, category: categorizeItem(i.name)} : i);
   else if (k==="b") state.breakfasts = val;
   else if (k==="wb") state.weekBreakfast = migrateWeekData(val);
@@ -461,6 +469,34 @@ function toBase(a, u) {
   return null;
 }
 function qtyStep(unit) { return (unit === 'g' || unit === 'ml') ? 50 : (unit === 'kg' || unit === 'l') ? 0.5 : 1; }
+
+// ── Scorte desiderate (mappa nome → {q, u}) ────────────
+// Chiave assente = mai impostata (default automatico dalla dispensa); q = 0 = disattivata.
+function seedDesired(name, qty, unit) {
+  if (qty == null || !(qty > 0)) return false;
+  const key = String(name).toLowerCase().trim();
+  if (state.desired[key] !== undefined) return false;
+  state.desired[key] = {q: qty, u: unit || "pz"};
+  return true;
+}
+// Quanto manca per arrivare alla scorta desiderata; null se ok o non tracciato
+function desiredMissing(key) {
+  const d = state.desired[key];
+  if (!d || !(d.q > 0)) return null;
+  const p = state.pantry.find(x => x.name.toLowerCase().trim() === key);
+  const want = toBase(d.q, d.u);
+  const have = p && p.qty != null ? toBase(p.qty, p.unit) : null;
+  if (want && have && want.d === have.d) {
+    if (have.v >= want.v) return null;
+    const perUnit = toBase(1, d.u).v;
+    return {missing: Math.round(((want.v - have.v) / perUnit) * 100) / 100, unit: d.u, name: p ? p.name : key};
+  }
+  if (p && p.qty != null) { // unità non confrontabili: confronto numerico diretto
+    if (p.qty >= d.q) return null;
+    return {missing: Math.round((d.q - p.qty) * 100) / 100, unit: d.u, name: p.name};
+  }
+  return {missing: d.q, unit: d.u, name: p ? p.name : key};
+}
 
 function updateSyncBadge(text) {
   const b = document.getElementById("storage-badge");
@@ -541,18 +577,16 @@ function generateShoppingList() {
     }
     out.push(i);
   }
-  // Scorte: se in dispensa c'è meno della quantità desiderata, aggiungi la differenza
-  for (const p of state.pantry) {
-    if (p.desired == null) continue;
-    const have = p.qty || 0;
-    if (have >= p.desired) continue;
-    const missing = Math.round((p.desired - have) * 100) / 100;
-    const existing = out.find(i => i.name.toLowerCase().trim() === p.name.toLowerCase().trim());
+  // Scorte: se hai meno della quantità desiderata, aggiungi la differenza
+  for (const key of Object.keys(state.desired)) {
+    const r = desiredMissing(key);
+    if (!r) continue;
+    const existing = out.find(i => i.name.toLowerCase().trim() === key);
     if (existing) {
-      const a = toBase(existing.amount, existing.unit), b = toBase(missing, p.unit);
-      if (a && b && a.d === b.d && b.v > a.v) { existing.amount = missing; existing.unit = p.unit; existing.restock = true; }
+      const a = toBase(existing.amount, existing.unit), b = toBase(r.missing, r.unit);
+      if (a && b && a.d === b.d && b.v > a.v) { existing.amount = r.missing; existing.unit = r.unit; existing.restock = true; }
     } else {
-      out.push({name: p.name, amount: missing, unit: p.unit || "", restock: true});
+      out.push({name: r.name, amount: r.missing, unit: r.unit, restock: true});
     }
   }
   return out
@@ -1173,14 +1207,36 @@ function renderImpostazioni() {
   const merged = getMergedCatMap();
   const catOpts = SHOP_CATS.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
 
+  // Tutti gli ingredienti noti + quelli in dispensa non ancora mappati
+  const allNames = Object.assign({}, merged);
+  for (const p of state.pantry) {
+    const k = p.name.toLowerCase().trim();
+    if (!(k in allNames)) allNames[k] = categorizeItem(k);
+  }
+  const q = state.catSearch.trim().toLowerCase();
+
   const sections = SHOP_CATS.map(cat => {
-    const entries = Object.entries(merged).filter(([,v]) => v === cat.id);
+    let entries = Object.keys(allNames).filter(n => allNames[n] === cat.id);
+    if (state.catFilter === "scorta") entries = entries.filter(n => state.desired[n] && state.desired[n].q > 0);
+    if (q) entries = entries.filter(n => n.includes(q));
     if (entries.length === 0) return '';
-    const rows = entries.map(([name]) => {
+    entries.sort((a,b) => a.localeCompare(b,"it"));
+    const rows = entries.map(name => {
       const isCustom = customMap[name] === cat.id;
-      const isDefaultOverridden = customMap[name] && customMap[name] !== INGREDIENT_CAT[name];
-      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #f5f5f5">
-        <span style="flex:1;font-size:13px;color:${isCustom?'#1E4D8C':'#111'}">${h(name)}${isCustom?'<span style="font-size:10px;color:#3A6EA5;margin-left:4px">★</span>':''}</span>
+      const d = state.desired[name];
+      const tracked = d && d.q > 0;
+      const low = tracked && desiredMissing(name);
+      const qtyCtl = tracked
+        ? `<div style="display:flex;align-items:center;gap:3px" title="Scorta desiderata">
+            <button style="width:22px;height:22px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:13px;line-height:1;cursor:pointer" onclick="adjustDesired('${ja(name)}',-1)">−</button>
+            <span style="min-width:34px;text-align:center;font-size:12px;font-weight:600;color:#555">${d.q}</span>
+            <select style="font-size:11px;border:1px solid #ddd;border-radius:6px;padding:1px 2px;font-family:inherit;color:#888" onchange="setDesiredUnit('${ja(name)}',this.value)">${["g","kg","ml","l","pz"].map(u=>`<option value="${u}"${d.u===u?' selected':''}>${u}</option>`).join('')}</select>
+            <button style="width:22px;height:22px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:13px;line-height:1;cursor:pointer" onclick="adjustDesired('${ja(name)}',1)">+</button>
+          </div>`
+        : `<button style="font-size:11px;font-weight:600;color:#7C6FF0;background:#EEEEFF;border:none;border-radius:10px;padding:4px 8px;cursor:pointer;white-space:nowrap" title="Attiva scorta minima" onclick="adjustDesired('${ja(name)}',1)">📦 +</button>`;
+      return `<div class="cat-row" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid #f5f5f5;flex-wrap:wrap">
+        <span style="flex:1;min-width:110px;font-size:13px;color:${isCustom?'#1E4D8C':'#111'}">${h(name)}${isCustom?'<span style="font-size:10px;color:#3A6EA5;margin-left:4px">★</span>':''}${low?' <span style="color:#B45309" title="Sotto scorta">▼</span>':''}</span>
+        ${qtyCtl}
         <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${ja(name)}',this.value)">${SHOP_CATS.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
         ${customMap[name]?`<button style="background:none;border:none;color:#ccc;cursor:pointer;font-size:16px" onclick="resetCatItem('${ja(name)}')">×</button>`:'<span style="width:20px"></span>'}
       </div>`;
@@ -1215,33 +1271,18 @@ function renderImpostazioni() {
     </div>
   </div>`;
 
-  // ── Scorte desiderate ──
-  const stockList = state.pantry.length === 0
-    ? noticeEl("info","La dispensa è vuota: aggiungi alimenti in <strong>Dispensa</strong> per gestire le scorte.")
-    : `<div class="card">` + state.pantry.slice().sort((a,b)=>a.name.localeCompare(b.name,"it")).map(p => {
-        const step = qtyStep(p.unit);
-        const low = p.desired != null && (p.qty || 0) < p.desired;
-        return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #f5f5f5">
-          <span style="flex:1;font-size:13px;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis">${h(p.name)}${low?' <span style="color:#B45309" title="Sotto scorta">▼</span>':''}</span>
-          <span style="font-size:11px;color:#aaa;white-space:nowrap">ora: ${p.qty != null ? p.qty + (p.unit ? ' ' + h(p.unit) : '') : '—'}</span>
-          <div style="display:flex;align-items:center;gap:4px">
-            <button style="width:24px;height:24px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:14px;line-height:1;cursor:pointer" onclick="adjustDesired('${p.id}',${-step})">−</button>
-            <span style="min-width:40px;text-align:center;font-size:12px;font-weight:600;color:#555">${p.desired != null ? p.desired : '—'}<span style="font-size:10px;font-weight:400;color:#aaa;margin-left:2px">${p.unit ? h(p.unit) : ''}</span></span>
-            <button style="width:24px;height:24px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;font-size:14px;line-height:1;cursor:pointer" onclick="adjustDesired('${p.id}',${step})">+</button>
-          </div>
-        </div>`;
-      }).join("") + `</div>`;
-  const stockCard = `<div class="mb16">
-    <div style="font-size:14px;font-weight:700;margin-bottom:6px">📦 Scorte desiderate</div>
-    <p style="font-size:12px;color:#888;line-height:1.5;margin-bottom:10px">Quando generi la <strong>Spesa</strong>, gli alimenti sotto la quantità desiderata vengono aggiunti alla lista per la differenza (etichetta <span style="color:#7C6FF0;font-weight:600">scorta</span>). La quantità desiderata parte da quella che hai ora; "—" = non tracciato.</p>
-    ${stockList}
-  </div>`;
+  const catTools = `<div style="margin-bottom:10px">
+      <input class="input" id="cat-search" value="${h(state.catSearch)}" placeholder="🔍 Cerca ingrediente..." autocomplete="off" oninput="setCatSearch(this.value)">
+    </div>
+    <div class="filter-bar">
+      <button class="filter-btn ${state.catFilter==='tutte'?'active':''}" onclick="state.catFilter='tutte';render()">Tutti</button>
+      <button class="filter-btn ${state.catFilter==='scorta'?'active':''}" onclick="state.catFilter='scorta';render()">📦 Con scorta impostata</button>
+    </div>`;
 
   return `${syncCard}
     ${expiryCard}
-    ${stockCard}
-    <div style="font-size:14px;font-weight:700;margin-bottom:6px">🗂 Categorie</div>
-    ${noticeEl("info","Le regole qui sotto determinano in quale categoria finisce ogni ingrediente nella <strong>Dispensa</strong> e nella <strong>Spesa</strong>. Le voci con ★ sono personalizzazioni tue. Puoi spostare qualsiasi ingrediente con il menu a tendina.")}
+    <div style="font-size:14px;font-weight:700;margin-bottom:6px">🗂 Ingredienti: categorie e scorte</div>
+    ${noticeEl("info","Ogni ingrediente ha la sua <strong>categoria</strong> (dove appare in Dispensa e Spesa) e una <strong>scorta desiderata</strong> (📦): se ne hai meno in dispensa, la differenza entra in lista spesa con l'etichetta <span style=\"color:#7C6FF0;font-weight:600\">scorta</span>. La scorta parte dalla quantità che hai ora; ▼ = sotto scorta; ★ = personalizzazione tua.")}
     <div class="card mb16" style="padding:12px">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">Aggiungi regola</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1250,14 +1291,15 @@ function renderImpostazioni() {
         <button class="btn btn-primary" onclick="addCatRule()">Aggiungi</button>
       </div>
     </div>
+    ${catTools}
     ${Object.keys(customMap).length > 0 ? `<button class="btn btn-outline mb12" onclick="if(confirm('Ripristinare tutte le regole predefinite?')){setCustomCatMap({});render()}">↺ Ripristina default</button>` : ''}
-    ${sections}`;
+    ${sections || noticeEl("info","Nessun ingrediente corrisponde ai filtri.")}`;
 }
 
 // ═══════════════════════════════════════════════════════
 // AZIONI
 // ═══════════════════════════════════════════════════════
-function switchTab(t) { state.tab=t; state.view="list"; state.deleteConfirm=null; state.tagFilter="tutti"; state.searchQuery=""; state.editExpiryId=null; render(); if (t==="spesa") refreshShopping(); }
+function switchTab(t) { state.tab=t; state.view="list"; state.deleteConfirm=null; state.tagFilter="tutti"; state.searchQuery=""; state.catSearch=""; state.editExpiryId=null; render(); if (t==="spesa") refreshShopping(); }
 function showView(v) { state.view=v; render(); }
 function setFilter(f) { state.tagFilter=f; render(); }
 function setBFilter(f) { state.bFilter=f; render(); }
@@ -1521,19 +1563,43 @@ function adjustPantryQty(id, delta) {
   const next = Math.max(0, Math.round((current + delta) * 100) / 100);
   item.qty = next === 0 ? null : next;
   // Prima quantità impostata → diventa anche la scorta desiderata di default
-  if (item.desired === undefined && item.qty != null) item.desired = item.qty;
+  if (seedDesired(item.name, item.qty, item.unit)) save("d", state.desired);
   save("p", state.pantry);
   render();
 }
 
-function adjustDesired(id, delta) {
-  const item = state.pantry.find(p => p.id === id);
-  if (!item) return;
-  const current = item.desired != null ? item.desired : (item.qty || 0);
-  const next = Math.max(0, Math.round((current + delta) * 100) / 100);
-  item.desired = next === 0 ? null : next;
-  save("p", state.pantry);
+function adjustDesired(name, dir) {
+  const key = String(name).toLowerCase().trim();
+  const cur = state.desired[key];
+  const p = state.pantry.find(x => x.name.toLowerCase().trim() === key);
+  if (!cur || !(cur.q > 0)) {
+    if (dir <= 0) return;
+    const unit = (cur && cur.u) || (p && p.unit) || "pz";
+    const q = p && p.qty != null && p.qty > 0 ? p.qty : qtyStep(unit);
+    state.desired[key] = {q, u: unit};
+  } else {
+    const step = qtyStep(cur.u);
+    const q = Math.max(0, Math.round((cur.q + dir * step) * 100) / 100);
+    state.desired[key] = {q, u: cur.u};
+  }
+  save("d", state.desired);
   render();
+}
+
+function setDesiredUnit(name, u) {
+  const key = String(name).toLowerCase().trim();
+  const cur = state.desired[key];
+  if (!cur) return;
+  cur.u = u;
+  save("d", state.desired);
+  render();
+}
+
+function setCatSearch(v) {
+  state.catSearch = v;
+  render();
+  const el = document.getElementById("cat-search");
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
 }
 
 function toggleExpiryEdit(id) {
@@ -1582,14 +1648,16 @@ function importPastedReceipt() {
     const existing = state.pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
     if (existing) {
       if (qty !== null) existing.qty = (existing.qty || 0) + qty;
-      if (existing.desired == null && existing.qty != null) existing.desired = existing.qty;
+      seedDesired(existing.name, existing.qty, existing.unit);
       updated++;
     } else {
-      state.pantry.push({id:uid(), name, qty: qty||null, desired: qty||null, unit, category: categorizeItem(name)});
+      state.pantry.push({id:uid(), name, qty: qty||null, unit, category: categorizeItem(name)});
+      seedDesired(name, qty, unit);
       added++;
     }
   }
   save("p", state.pantry);
+  save("d", state.desired);
   state.showReceiptModal = false;
   render();
   alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
@@ -1621,14 +1689,16 @@ function handlePantryTxt(input) {
       const existing = state.pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
       if (existing) {
         if (qty !== null) existing.qty = (existing.qty || 0) + qty;
-        if (existing.desired == null && existing.qty != null) existing.desired = existing.qty;
+        seedDesired(existing.name, existing.qty, existing.unit);
         updated++;
       } else {
-        state.pantry.push({id:uid(), name, qty: qty||null, desired: qty||null, unit, category: categorizeItem(name)});
+        state.pantry.push({id:uid(), name, qty: qty||null, unit, category: categorizeItem(name)});
+        seedDesired(name, qty, unit);
         added++;
       }
     }
     save("p", state.pantry);
+    save("d", state.desired);
     input.value = "";
     state.showReceiptModal = false;
     render();
