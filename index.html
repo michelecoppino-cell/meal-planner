@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cosa mangiamo?</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f0; color: #111; }
@@ -122,6 +126,9 @@
   .cat-hdr { padding: 7px 12px; background: #F8F8F8; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #666; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ddd; border-top-color: #333; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-color-scheme: dark) {
+    html { filter: invert(1) hue-rotate(180deg); background: #f5f5f0; }
+  }
   @media (min-width: 640px) {
     .app { border-left: 1px solid #eee; border-right: 1px solid #eee; }
     .content { padding: 24px 32px 100px; }
@@ -314,15 +321,17 @@ let state = {
   tab: "paniere",
   view: "list",
   detailId: null,
+  detailType: null,
   pickingFor: null,
   pickingBreakfastFor: null,
   tagFilter: "tutti",
   bFilter: "tutte",
+  searchQuery: "",
+  portionScale: 1,
   recipes: JSON.parse(JSON.stringify(SEED_RECIPES)),
   breakfasts: JSON.parse(JSON.stringify(SEED_BREAKFASTS)),
   weekPlan: {},
   weekBreakfast: {},
-  weekNotes: {},
   pantry: [],
   shopping: [],
   newPantry: "",
@@ -344,7 +353,8 @@ const WORKER_URL = "https://meal-planner-api.michelecoppino.workers.dev";
 const AUTH_TOKEN  = "mealplanner2026";
 // ───────────────────────────────────────────────────────
 
-const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1",wn:"cm:wn:v1"};
+const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1"};
+const STORE_KEYS = ["r","w","p","s","b","wb"];
 
 async function sGet(key) {
   try {
@@ -368,25 +378,32 @@ async function sSet(key, val) {
   } catch { return false; }
 }
 
-async function loadFromStorage() {
-  try {
-    const keys = ["r","w","p","s","b","wb","wn"];
-    for (const k of keys) {
-      const val = await sGet(SK[k]);
-      if (val !== null) {
-        if (k==="r") state.recipes = val;
-        else if (k==="w") state.weekPlan = val;
-        else if (k==="p") state.pantry = val;
-        else if (k==="s") state.shopping = val;
-        else if (k==="b") state.breakfasts = val;
-        else if (k==="wb") state.weekBreakfast = val;
-        else if (k==="wn") state.weekNotes = val;
-      }
-    }
-  } catch(e) {}
+function applyVal(k, val) {
+  if (val === null || val === undefined) return;
+  if (k==="r") state.recipes = val;
+  else if (k==="w") state.weekPlan = migrateWeekData(val);
+  else if (k==="p") state.pantry = val;
+  else if (k==="s") state.shopping = val.map(i => i.manual ? {...i, category: categorizeItem(i.name)} : i);
+  else if (k==="b") state.breakfasts = val;
+  else if (k==="wb") state.weekBreakfast = migrateWeekData(val);
+}
+
+function loadLocal() {
+  for (const k of STORE_KEYS) {
+    try {
+      const raw = localStorage.getItem(SK[k]);
+      if (raw !== null) applyVal(k, JSON.parse(raw));
+    } catch {}
+  }
+}
+
+async function loadRemote() {
+  const vals = await Promise.all(STORE_KEYS.map(k => sGet(SK[k])));
+  STORE_KEYS.forEach((k, i) => applyVal(k, vals[i]));
 }
 
 async function save(k, val) {
+  try { localStorage.setItem(SK[k], JSON.stringify(val)); } catch {}
   const ok = await sSet(SK[k], val);
   if (!ok) {
     const badge = document.getElementById("storage-badge");
@@ -399,26 +416,86 @@ async function save(k, val) {
 // ═══════════════════════════════════════════════════════
 function uid() { return Math.random().toString(36).slice(2,9); }
 function h(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+// Per valori interpolati dentro stringhe JS negli attributi onclick: prima escape JS, poi HTML
+function ja(str) { return h(String(str).replace(/\\/g,"\\\\").replace(/'/g,"\\'")); }
+
+function weekKey(offset) {
+  const d = getWeekDates(offset || 0)[0];
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function currentPlan() {
+  const k = weekKey(state.weekOffset);
+  if (!state.weekPlan[k]) state.weekPlan[k] = {};
+  return state.weekPlan[k];
+}
+function currentBPlan() {
+  const k = weekKey(state.weekOffset);
+  if (!state.weekBreakfast[k]) state.weekBreakfast[k] = {};
+  return state.weekBreakfast[k];
+}
+// Vecchio formato: {Lunedì: rid, ...} → nuovo: {"YYYY-MM-DD": {Lunedì: rid, ...}}
+function migrateWeekData(obj) {
+  if (!obj || typeof obj !== "object") return {};
+  if (Object.keys(obj).some(k => DAYS.includes(k))) return { [weekKey(0)]: obj };
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+  for (const k of Object.keys(obj)) { const d = new Date(k); if (!isNaN(d) && d < cutoff) delete obj[k]; }
+  return obj;
+}
+function seasonForDate(d) {
+  const m = d.getMonth() + 1;
+  return m >= 3 && m <= 5 ? "primavera" : m >= 6 && m <= 8 ? "estate" : m >= 9 && m <= 11 ? "autunno" : "inverno";
+}
+function toBase(a, u) {
+  u = (u || "").toLowerCase();
+  if (u === "kg") return {v: a*1000, d: "g"};
+  if (u === "g")  return {v: a, d: "g"};
+  if (u === "l")  return {v: a*1000, d: "ml"};
+  if (u === "ml") return {v: a, d: "ml"};
+  if (u === "pz") return {v: a, d: "pz"};
+  return null;
+}
 function tagEl(tag) { return `<span class="tag tag-${h(tag)}">${h(TAGS[tag]?.label||tag)}</span>`; }
 function dotEl(tag, sz=8) { return `<div class="dot" style="width:${sz}px;height:${sz}px;background:${h(TAGS[tag]?.dot||'#888')}"></div>`; }
 function noticeEl(type, content) { return `<div class="notice notice-${type}">${content}</div>`; }
 function btnEl(id, variant, text, extra="") { return `<button class="btn btn-${variant}" onclick="${id}()" ${extra}>${text}</button>`; }
 
 function generateShoppingList() {
-  const ids = Object.values(state.weekPlan).filter(v => v && !v.startsWith("__custom__:"));
+  const plan = state.weekPlan[weekKey(state.weekOffset)] || {};
+  const bplan = state.weekBreakfast[weekKey(state.weekOffset)] || {};
+  const meals = [];
+  for (const v of Object.values(plan)) {
+    if (!v || v.startsWith("__custom__:")) continue;
+    const r = state.recipes.find(x => x.id === v);
+    if (r) meals.push(r);
+  }
+  for (const v of Object.values(bplan)) {
+    if (!v || v.startsWith("__custom__:")) continue;
+    const b = state.breakfasts.find(x => x.id === v);
+    if (b) meals.push(b);
+  }
   const agg = {};
-  for (const rid of ids) {
-    const r = state.recipes.find(x => x.id === rid);
-    if (!r) continue;
-    for (const ing of r.ing) {
+  for (const m of meals) {
+    for (const ing of m.ing) {
       const key = ing.n.toLowerCase().trim() + "::" + ing.u;
       if (agg[key]) { if (ing.u !== "qb") agg[key].amount += ing.a; }
       else agg[key] = {name: ing.n, amount: ing.a, unit: ing.u};
     }
   }
-  const pset = new Set(state.pantry.map(p => p.name.toLowerCase().trim()));
-  return Object.values(agg)
-    .filter(i => !pset.has(i.name.toLowerCase().trim()))
+  const pmap = new Map(state.pantry.map(p => [p.name.toLowerCase().trim(), p]));
+  const out = [];
+  for (const i of Object.values(agg)) {
+    const p = pmap.get(i.name.toLowerCase().trim());
+    if (p) {
+      // In dispensa: se la quantità è nota e confrontabile compra solo la differenza, altrimenti escludi
+      const have = p.qty != null ? toBase(p.qty, p.unit) : null;
+      const need = toBase(i.amount, i.unit);
+      if (!have || !need || have.d !== need.d || i.unit === "qb" || !(i.amount > 0)) continue;
+      if (have.v >= need.v) continue;
+      i.amount = Math.round(((need.v - have.v) / toBase(1, i.unit).v) * 100) / 100;
+    }
+    out.push(i);
+  }
+  return out
     .sort((a,b) => a.name.localeCompare(b.name,"it"))
     .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false, category:categorizeItem(i.name)}));
 }
@@ -436,9 +513,18 @@ function renderTabs() {
 // ═══════════════════════════════════════════════════════
 // VISTE
 // ═══════════════════════════════════════════════════════
+function searchFiltered(recipes) {
+  const q = state.searchQuery.trim().toLowerCase();
+  if (!q) return recipes;
+  return recipes.filter(r => r.name.toLowerCase().includes(q) || r.ing.some(i => i.n.toLowerCase().includes(q)));
+}
+function searchBox() {
+  return `<div style="margin-bottom:12px"><input class="input" id="recipe-search" value="${h(state.searchQuery)}" placeholder="\ud83d\udd0d Cerca per nome o ingrediente..." autocomplete="off" oninput="setSearch(this.value)"></div>`;
+}
+
 function renderPaniere() {
   const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
-  const visible = state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter);
+  const visible = searchFiltered(state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter));
   const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
   const grid = visible.length === 0 ? noticeEl("info","Nessuna ricetta trovata.") :
     `<div class="recipe-grid">${visible.map(r => `
@@ -451,7 +537,7 @@ function renderPaniere() {
           <div class="recipe-time">⏱ ${h(r.time)}</div>
         </div>
       </div>`).join("")}</div>`;
-  return `<div class="filter-bar">${filters}</div>
+  return `${searchBox()}<div class="filter-bar">${filters}</div>
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-outline" onclick="showView('addRecipe')">+ Aggiungi</button>
       <button class="btn btn-outline" onclick="showView('importCSV')">↑ Importa CSV</button>
@@ -484,25 +570,27 @@ function renderColazioni() {
 }
 
 function renderSettimana() {
-  const filledDinner = Object.values(state.weekPlan).filter(Boolean).length;
+  const plan = currentPlan();
+  const bplan = currentBPlan();
+  const filledDinner = Object.values(plan).filter(Boolean).length;
   const weekDates = getWeekDates(state.weekOffset);
   const MONTHS = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
   const days = DAYS.map((day, i) => {
-    const prevRaw = i > 0 ? (state.weekPlan[DAYS[i-1]] || null) : null;
+    const prevRaw = i > 0 ? (plan[DAYS[i-1]] || null) : null;
     const prevIsCustom = prevRaw && prevRaw.startsWith("__custom__:");
     const prev = prevRaw && !prevIsCustom ? state.recipes.find(r => r.id === prevRaw) : null;
     const prevName = prevIsCustom ? prevRaw.slice(11) : (prev ? prev.name : null);
-    const breakfastRaw = state.weekBreakfast[day] || null;
+    const breakfastRaw = bplan[day] || null;
     const isCustomBreakfast = breakfastRaw && breakfastRaw.startsWith("__custom__:");
     const breakfast = !isCustomBreakfast ? (breakfastRaw ? state.breakfasts.find(b => b.id === breakfastRaw) : null) : null;
     const customBreakfastName = isCustomBreakfast ? breakfastRaw.slice(11) : null;
 
     // Se la colazione di DOMANI richiede prep serale, mostra promemoria su OGGI
-    const tomorrowBreakfastId = i < DAYS.length - 1 ? state.weekBreakfast[DAYS[i+1]] : null;
+    const tomorrowBreakfastId = i < DAYS.length - 1 ? bplan[DAYS[i+1]] : null;
     const tomorrowIsCustom = tomorrowBreakfastId && tomorrowBreakfastId.startsWith("__custom__:");
     const tomorrowBreakfast = tomorrowBreakfastId && !tomorrowIsCustom ? state.breakfasts.find(b => b.id === tomorrowBreakfastId) : null;
     const prepReminder = tomorrowBreakfast && tomorrowBreakfast.prepAhead
-      ? `<span title="Prepara stanotte la colazione di ${DAYS[i+1]}" style="margin-left:auto;font-size:13px;cursor:default" title="Prepara la colazione di domani stasera">🌙</span>`
+      ? `<span title="Prepara stanotte la colazione di ${DAYS[i+1]}" style="margin-left:auto;font-size:13px;cursor:default">🌙</span>`
       : "";
 
     const bCol = breakfast ? (breakfast.prepAhead ? "#7C6FF0" : "#E07C3B") : "#bbb";
@@ -520,7 +608,7 @@ function renderSettimana() {
         </div>`
       : `<button class="btn btn-outline" onclick="openBreakfastPicker('${day}')">+ Aggiungi</button>`;
 
-    const dinnerRaw = state.weekPlan[day] || null;
+    const dinnerRaw = plan[day] || null;
     const isCustomDinner = dinnerRaw && dinnerRaw.startsWith("__custom__:");
     const dinner = !isCustomDinner ? (dinnerRaw ? state.recipes.find(r => r.id === dinnerRaw) : null) : null;
     const customDinnerName = isCustomDinner ? dinnerRaw.slice(11) : null;
@@ -571,13 +659,14 @@ function renderSettimana() {
       <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset++;render()">→</button>
     </div>
     ${noticeEl("info","La cena diventa automaticamente il <strong>pranzo del giorno dopo</strong>. 🌙 = prepara la colazione di domani stasera.")}
+    ${filledDinner < 7 ? `<button class="btn btn-outline mb12" style="width:100%;justify-content:center" onclick="autoFillWeek()">✨ Riempi le cene vuote con ricette di stagione</button>` : ""}
     ${filledDinner===7 ? noticeEl("success","✓ Cene complete! Vai su <strong>Spesa</strong> per generare la lista.") : ""}
     ${days}`;
 }
 
 function renderPicker() {
   const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
-  const visible = state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter);
+  const visible = searchFiltered(state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter));
   const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
   const rows = visible.map(r => `
     <div style="padding:12px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;align-items:center;gap:12px" onclick="assignDinner('${r.id}')">
@@ -592,7 +681,7 @@ function renderPicker() {
       <input class="input" id="custom-dinner-input" placeholder="Scrivi un pasto personalizzato (es. Pizza, Cena fuori…)" style="flex:1">
       <button class="btn btn-primary" onclick="assignCustomDinner()">Aggiungi</button>
     </div>
-    <div class="filter-bar">${filters}</div>
+    ${searchBox()}<div class="filter-bar">${filters}</div>
     <div class="card">${rows}</div>`;
 }
 
@@ -629,7 +718,7 @@ function renderDispensa() {
     ...getAllKnownIngredients()
   ])].sort((a,b)=>a.localeCompare(b,"it"));
   const suggestions = allIngs.filter(n => !state.pantry.some(p=>p.name.toLowerCase()===n.toLowerCase()));
-  const dropItems = suggestions.map(n => `<div onclick="selectPantryIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
+  const dropItems = suggestions.map(n => `<div onclick="selectPantryIng('${ja(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
   const dropdown = `<div id="pantry-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${dropItems}</div>`;
 
   let itemsHtml = "";
@@ -735,7 +824,11 @@ pasta - 500 g`;
 }
 
 function renderSpesa() {
-  const usedCount = new Set(Object.values(state.weekPlan).filter(Boolean)).size;
+  const plan = state.weekPlan[weekKey(state.weekOffset)] || {};
+  const bplan = state.weekBreakfast[weekKey(state.weekOffset)] || {};
+  const dinners = Object.values(plan).filter(v => v && !v.startsWith("__custom__:")).length;
+  const bfasts = Object.values(bplan).filter(v => v && !v.startsWith("__custom__:")).length;
+  const usedCount = dinners + bfasts;
   const todo = state.shopping.filter(i => !i.checked);
   const done = state.shopping.filter(i => i.checked);
   const total = state.shopping.length;
@@ -744,10 +837,13 @@ function renderSpesa() {
 
   const headerCard = `<div class="card" style="padding:12px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
     <div style="flex:1">
-      <div style="font-size:13px;font-weight:600;color:#111;margin-bottom:3px">${usedCount>0?`${usedCount} ricett${usedCount===1?"a":"e"} nel piano`:"Nessuna ricetta pianificata"}</div>
-      <div style="font-size:12px;color:#888">${state.pantry.length>0?`${state.pantry.length} ingredienti dispensa esclusi`:"Nessuna dispensa configurata"}</div>
+      <div style="font-size:13px;font-weight:600;color:#111;margin-bottom:3px">${usedCount>0?`${dinners} cen${dinners===1?"a":"e"} · ${bfasts} colazion${bfasts===1?"e":"i"} nel piano`:"Nessun pasto pianificato"}</div>
+      <div style="font-size:12px;color:#888">${state.pantry.length>0?`${state.pantry.length} ingredienti dispensa considerati`:"Nessuna dispensa configurata"}</div>
     </div>
-    <button class="btn btn-primary" onclick="doGenerate()" ${usedCount===0?"disabled":""}>${state.shopping.length>0?"↻ Rigenera":"Genera lista"}</button>
+    <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
+      <button class="btn btn-primary" onclick="doGenerate()" ${usedCount===0?"disabled":""}>${state.shopping.length>0?"↻ Rigenera":"Genera lista"}</button>
+      ${state.shopping.filter(i=>!i.checked).length>0?`<button class="btn btn-outline" style="justify-content:center" onclick="shareShopping()">📤 Condividi</button>`:""}
+    </div>
   </div>`;
 
   const progressBar = total > 0 ? `<div style="margin-bottom:16px">
@@ -762,7 +858,7 @@ function renderSpesa() {
   </div>` : "";
 
   const shopIngs = getAllKnownIngredients();
-  const shopDropItems = shopIngs.map(n => `<div onclick="selectShopIng('${h(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
+  const shopDropItems = shopIngs.map(n => `<div onclick="selectShopIng('${ja(n)}')" style="padding:9px 12px;font-size:14px;color:#111;cursor:pointer;border-bottom:1px solid #f5f5f5;" onmouseover="this.style.background='#F5F5F5'" onmouseout="this.style.background=''">${h(n)}</div>`).join("");
   const shopDropdown = `<div id="shop-dropdown" class="card" style="display:none;position:absolute;left:0;right:0;z-index:100;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1)">${shopDropItems}</div>`;
   const addExtra = `<div style="position:relative;margin-bottom:16px">
     <div style="display:flex;gap:8px">
@@ -812,7 +908,7 @@ function renderSpesa() {
 }
 
 function renderDetail() {
-  const isBreakfast = state.detailId && state.detailId.startsWith("b");
+  const isBreakfast = state.detailType === "breakfast";
   const item = isBreakfast ? state.breakfasts.find(b=>b.id===state.detailId) : state.recipes.find(r=>r.id===state.detailId);
   if (!item) return "<p>Non trovato.</p>";
   const accentColor = isBreakfast ? (item.prepAhead?"#7C6FF0":"#E07C3B") : (TAGS[item.tag]?.dot||"#333");
@@ -826,10 +922,13 @@ function renderDetail() {
         <button class="btn btn-ghost" style="font-size:12px" onclick="startEdit('${item.id}')">✏️ Modifica</button>
         <button class="btn btn-ghost" style="color:#B91C1C;font-size:12px" onclick="state.deleteConfirm='${item.id}';render()">Elimina</button>
        </div>`;
+  const scale = state.portionScale;
+  const scaleBtns = `<div class="filter-bar" style="margin:0">${[[0.5,"½×"],[1,"1×"],[2,"2×"]].map(([s,l]) =>
+    `<button class="filter-btn ${scale===s?'active':''}" onclick="setScale(${s})">${l}</button>`).join("")}</div>`;
   const ings = item.ing.map(ing => `<div class="detail-ing-row">
     <div style="width:5px;height:5px;border-radius:50%;background:${accentColor};flex-shrink:0"></div>
     <span style="flex:1;color:#111">${h(ing.n)}</span>
-    <span style="color:#666">${ing.u==="qb"?"q.b.":`${ing.a} ${h(ing.u)}`}</span>
+    <span style="color:#666">${ing.u==="qb"?"q.b.":`${Math.round(ing.a*scale*100)/100} ${h(ing.u)}`}</span>
   </div>`).join("");
   const steps = item.steps.map((step,i) => `<div class="step-row">
     <div class="step-num" style="background:${accentColor}">${i+1}</div>
@@ -843,14 +942,17 @@ function renderDetail() {
   <h2 style="font-size:20px;font-weight:700;margin:10px 0 4px;line-height:1.3;color:#111">${h(item.name)}</h2>
   <p style="font-size:13px;color:#666;margin:0 0 12px">⏱ ${h(item.time)}${sub}</p>
   ${item.note ? noticeEl("warning","💡 " + h(item.note)) : ""}
-  <h3 style="font-size:15px;font-weight:600;margin:1rem 0 6px;color:#111">Ingredienti <span style="font-size:12px;font-weight:400;color:#888">(2 adulti + 1 bambino)</span></h3>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin:1rem 0 6px">
+    <h3 style="font-size:15px;font-weight:600;color:#111">Ingredienti <span style="font-size:12px;font-weight:400;color:#888">(2 adulti + 1 bambino)</span></h3>
+    ${scaleBtns}
+  </div>
   ${ings}
   <h3 style="font-size:15px;font-weight:600;margin:1.4rem 0 6px;color:#111">Preparazione</h3>
   ${steps}`;
 }
 
 function renderAddRecipe() {
-  const f = state.formData || {tag:"vegano",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
+  const f = state.formData || {tag:"primavera",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
   const tagOpts = Object.entries(TAGS).map(([k,v]) => `<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("");
   const unitOpts = UNITS.map(u => `<option value="${u}">${u}</option>`).join("");
   const ingRows = f.ings.map((ing,idx) => `<div class="ing-row">
@@ -1004,8 +1106,8 @@ function renderImpostazioni() {
       const isDefaultOverridden = customMap[name] && customMap[name] !== INGREDIENT_CAT[name];
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid #f5f5f5">
         <span style="flex:1;font-size:13px;color:${isCustom?'#1E4D8C':'#111'}">${h(name)}${isCustom?'<span style="font-size:10px;color:#3A6EA5;margin-left:4px">★</span>':''}</span>
-        <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${h(name)}',this.value)">${SHOP_CATS.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
-        ${customMap[name]?`<button style="background:none;border:none;color:#ccc;cursor:pointer;font-size:16px" onclick="resetCatItem('${h(name)}')">×</button>`:'<span style="width:20px"></span>'}
+        <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${ja(name)}',this.value)">${SHOP_CATS.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
+        ${customMap[name]?`<button style="background:none;border:none;color:#ccc;cursor:pointer;font-size:16px" onclick="resetCatItem('${ja(name)}')">×</button>`:'<span style="width:20px"></span>'}
       </div>`;
     }).join("");
     return `<div class="card mb12">
@@ -1030,19 +1132,26 @@ function renderImpostazioni() {
 // ═══════════════════════════════════════════════════════
 // AZIONI
 // ═══════════════════════════════════════════════════════
-function switchTab(t) { state.tab=t; state.view="list"; state.deleteConfirm=null; state.tagFilter="tutti"; render(); }
+function switchTab(t) { state.tab=t; state.view="list"; state.deleteConfirm=null; state.tagFilter="tutti"; state.searchQuery=""; render(); if (t==="spesa") refreshShopping(); }
 function showView(v) { state.view=v; render(); }
 function setFilter(f) { state.tagFilter=f; render(); }
 function setBFilter(f) { state.bFilter=f; render(); }
-function openDetail(id, type) { state.detailId=id; state.view="detail"; state.deleteConfirm=null; render(); }
-function openPicker(day) { state.pickingFor=day; state.tagFilter="tutti"; state.view="picker"; render(); }
+function setSearch(v) {
+  state.searchQuery = v;
+  render();
+  const el = document.getElementById("recipe-search");
+  if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+}
+function setScale(s) { state.portionScale=s; render(); }
+function openDetail(id, type) { state.detailId=id; state.detailType=type; state.portionScale=1; state.view="detail"; state.deleteConfirm=null; render(); }
+function openPicker(day) { state.pickingFor=day; state.tagFilter="tutti"; state.searchQuery=""; state.view="picker"; render(); }
 function openBreakfastPicker(day) { state.pickingBreakfastFor=day; state.bFilter="tutte"; state.view="breakfastPicker"; render(); }
 
 function assignCustomDinner() {
   const inp = document.getElementById("custom-dinner-input");
   const val = (inp ? inp.value : "").trim();
   if (!val) return;
-  state.weekPlan[state.pickingFor] = "__custom__:" + val;
+  currentPlan()[state.pickingFor] = "__custom__:" + val;
   save("w", state.weekPlan);
   state.view = "list"; state.tab = "settimana"; render();
 }
@@ -1050,15 +1159,47 @@ function assignCustomBreakfast() {
   const inp = document.getElementById("custom-breakfast-input");
   const val = (inp ? inp.value : "").trim();
   if (!val) return;
-  state.weekBreakfast[state.pickingBreakfastFor] = "__custom__:" + val;
+  currentBPlan()[state.pickingBreakfastFor] = "__custom__:" + val;
   save("wb", state.weekBreakfast);
   state.view = "list"; state.tab = "settimana"; render();
 }
-function removeDinner(day) { delete state.weekPlan[day]; save("w",state.weekPlan); render(); }
-function assignDinner(rid) { state.weekPlan[state.pickingFor]=rid; save("w",state.weekPlan); state.view="list"; state.tab="settimana"; render(); }
-function updateNote(day,val) { state.weekNotes[day]=val; save("wn",state.weekNotes); }
-function removeBreakfast(day) { delete state.weekBreakfast[day]; save("wb",state.weekBreakfast); render(); }
-function assignBreakfast(bid) { state.weekBreakfast[state.pickingBreakfastFor]=bid; save("wb",state.weekBreakfast); state.view="list"; state.tab="settimana"; render(); }
+function removeDinner(day) { delete currentPlan()[day]; save("w",state.weekPlan); render(); }
+function assignDinner(rid) { currentPlan()[state.pickingFor]=rid; save("w",state.weekPlan); state.view="list"; state.tab="settimana"; render(); }
+function removeBreakfast(day) { delete currentBPlan()[day]; save("wb",state.weekBreakfast); render(); }
+function assignBreakfast(bid) { currentBPlan()[state.pickingBreakfastFor]=bid; save("wb",state.weekBreakfast); state.view="list"; state.tab="settimana"; render(); }
+
+function autoFillWeek() {
+  const plan = currentPlan();
+  const empty = DAYS.filter(d => !plan[d]);
+  if (!empty.length) return;
+  const season = seasonForDate(getWeekDates(state.weekOffset)[0]);
+  const used = new Set(Object.values(plan));
+  let pool = state.recipes.filter(r => r.tag === season && !used.has(r.id));
+  if (pool.length < empty.length) pool = pool.concat(state.recipes.filter(r => r.tag !== season && !used.has(r.id)));
+  if (!pool.length) return;
+  pool = pool.slice().sort(() => Math.random() - 0.5);
+  empty.forEach((d, i) => { plan[d] = pool[i % pool.length].id; });
+  save("w", state.weekPlan);
+  render();
+}
+
+function shareShopping() {
+  const items = state.shopping.filter(i => !i.checked);
+  if (!items.length) { alert("La lista è vuota."); return; }
+  const text = "🛒 Lista della spesa\n" + items.map(i =>
+    i.amount > 0 && i.unit && i.unit !== "qb" ? `• ${i.name} — ${i.amount} ${i.unit}` : `• ${i.name}`).join("\n");
+  if (navigator.share) navigator.share({text}).catch(()=>{});
+  else navigator.clipboard.writeText(text).then(()=>alert("Lista copiata negli appunti")).catch(()=>{});
+}
+
+async function refreshShopping() {
+  const val = await sGet(SK.s);
+  if (val !== null) {
+    applyVal("s", val);
+    try { localStorage.setItem(SK.s, JSON.stringify(state.shopping)); } catch {}
+    if (state.tab === "spesa" && state.view === "list") render();
+  }
+}
 
 function filterPantryDrop(val) {
   const drop = document.getElementById("pantry-dropdown");
@@ -1112,7 +1253,7 @@ function clearChecked() { state.shopping=state.shopping.map(i=>({...i,checked:fa
 
 function startEdit(id) {
   state.editId = id;
-  const isB = id.startsWith("b");
+  const isB = state.detailType === "breakfast";
   if (isB) {
     const b = state.breakfasts.find(x => x.id === id);
     state.formData = b ? {name:b.name, time:b.time, prepAhead:b.prepAhead, note:b.note||"", steps:b.steps.join("\n"), ings:b.ing.map(i=>({n:i.n,a:i.a,u:i.u}))} : null;
@@ -1150,13 +1291,20 @@ function saveEditBreakfast() {
   render();
 }
 function confirmDelete(id) {
-  const isB = id.startsWith("b");
-  if (isB) { state.breakfasts=state.breakfasts.filter(b=>b.id!==id); save("b",state.breakfasts); }
-  else { state.recipes=state.recipes.filter(r=>r.id!==id); Object.keys(state.weekPlan).forEach(d=>{if(state.weekPlan[d]===id)delete state.weekPlan[d];}); save("r",state.recipes); save("w",state.weekPlan); }
+  const isB = state.detailType === "breakfast";
+  if (isB) {
+    state.breakfasts=state.breakfasts.filter(b=>b.id!==id);
+    for (const week of Object.values(state.weekBreakfast)) Object.keys(week).forEach(d=>{if(week[d]===id)delete week[d];});
+    save("b",state.breakfasts); save("wb",state.weekBreakfast);
+  } else {
+    state.recipes=state.recipes.filter(r=>r.id!==id);
+    for (const week of Object.values(state.weekPlan)) Object.keys(week).forEach(d=>{if(week[d]===id)delete week[d];});
+    save("r",state.recipes); save("w",state.weekPlan);
+  }
   state.deleteConfirm=null; state.view="list"; render();
 }
 
-function updateForm(k,v) { if(!state.formData)state.formData={tag:"vegano",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]}; state.formData[k]=v; }
+function updateForm(k,v) { if(!state.formData)state.formData={tag:"primavera",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]}; state.formData[k]=v; }
 function updateIng(idx,k,v) { if(state.formData&&state.formData.ings[idx])state.formData.ings[idx][k]=v; }
 function addIng() { if(!state.formData)return; state.formData.ings.push({n:"",a:"",u:"g"}); render(); }
 function removeIng(idx) { if(!state.formData)return; state.formData.ings.splice(idx,1); render(); }
@@ -1187,7 +1335,7 @@ function previewCSV(text) {
     const parsed=lines.slice(1).filter(l=>l.trim()).map(line=>{
       const vals=line.split(","); const row={};
       header.forEach((h,i)=>{row[h]=(vals[i]||"").trim().replace(/^"|"$/g,"");});
-      return{id:uid(),tag:row.tag||"vegano",name:row.name||"Senza nome",time:row.time||"",grain:row.grain||"",protein:row.protein||"",note:row.note||"",
+      return{id:uid(),tag:row.tag||"primavera",name:row.name||"Senza nome",time:row.time||"",grain:row.grain||"",protein:row.protein||"",note:row.note||"",
         ing:(row.ingredients||"").split("|").filter(Boolean).map(s=>{const[n,a,u]=s.split(":");return{n:(n||"").trim(),a:parseFloat(a)||0,u:(u||"qb").trim()};}),
         steps:(row.steps||"").split("|").filter(Boolean).map(s=>s.trim())};
     });
@@ -1205,7 +1353,7 @@ function importParsed() {
 // NUOVE FUNZIONI
 // ═══════════════════════════════════════════════════════
 function markConsumed(day) {
-  const raw = state.weekPlan[day];
+  const raw = currentPlan()[day];
   if (!raw || raw.startsWith("__custom__:")) return;
   const recipe = state.recipes.find(r => r.id === raw);
   if (!recipe) return;
@@ -1383,7 +1531,13 @@ function resetCatItem(name) {
 // ═══════════════════════════════════════════════════════
 // AVVIO
 // ═══════════════════════════════════════════════════════
-loadFromStorage().then(()=>render()).catch(()=>render());
+loadLocal();
+render();
+loadRemote().then(()=>render()).catch(()=>{});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.tab === "spesa") refreshShopping();
+});
 </script>
 </body>
 </html>
