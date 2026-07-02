@@ -1,0 +1,19 @@
+{
+  "name": "Cosa mangiamo?",
+  "short_name": "Cosa mangiamo",
+  "description": "Meal planner settimanale con lista della spesa e dispensa",
+  "lang": "it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f5f0",
+  "theme_color": "#2D6A4F",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

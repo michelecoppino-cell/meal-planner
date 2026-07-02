@@ -1,0 +1,13 @@
+name = "meal-planner-api"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Sostituisci con l'ID del tuo namespace KV esistente
+# (lo trovi su dash.cloudflare.com → Workers & Pages → KV)
+[[kv_namespaces]]
+binding = "KV"
+id = "INSERISCI_ID_NAMESPACE_KV"
+
+# Segreti da impostare via CLI (NON metterli qui):
+#   wrangler secret put AUTH_TOKEN        → lo stesso token usato nell'app
+#   wrangler secret put ALEXA_SKILL_ID    → amzn1.ask.skill.xxxx (dopo aver creato la skill)
