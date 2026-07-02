@@ -23,7 +23,7 @@ Il Worker in `worker/worker.js` include i nuovi endpoint `/add-item` e `/alexa`.
 2. Sostituisci il codice con il contenuto di `worker/worker.js` e fai **Deploy**.
 3. Verifica che nelle impostazioni del Worker:
    - il binding KV si chiami **`KV`** (Settings → Bindings). Se il tuo si chiama diversamente, rinominalo o adatta il codice.
-   - esista la variabile/segreto **`AUTH_TOKEN`** con lo stesso valore usato nell'app.
+   - esista la variabile/segreto **`AUTH_TOKEN`** con lo stesso valore che inserisci nell'app (Impostazioni → Sincronizzazione). Approfittane per sceglierne uno lungo e casuale, es. `openssl rand -hex 24`.
 
 In alternativa, da terminale: `cd worker && npx wrangler deploy` (dopo aver messo l'ID del namespace KV in `wrangler.toml`).
 
