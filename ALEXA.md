@@ -68,7 +68,6 @@ Apri l'app → tab Spesa: "latte" deve comparire.
             "aggiungi {articolo}",
             "segna {articolo}",
             "annota {articolo}",
-            "aggiungi {articolo} alla spesa",
             "mi serve {articolo}",
             "dobbiamo comprare {articolo}",
             "di comprare {articolo}"
@@ -80,8 +79,7 @@ Apri l'app → tab Spesa: "latte" deve comparire.
             "cosa devo comprare",
             "cosa dobbiamo comprare",
             "cosa manca",
-            "leggimi cosa manca",
-            "leggimi la spesa"
+            "leggimi cosa manca"
           ]
         }
       ]
@@ -90,12 +88,15 @@ Apri l'app → tab Spesa: "latte" deve comparire.
 }
 ```
 
-> **Nota:** l'invocation name e le frasi **non devono contenere "lista"** (né "lista della spesa"). Alexa
-> ha una funzione nativa di liste della spesa integrata in ogni Echo, e frasi come "aggiungi X alla lista
-> della spesa" vengono intercettate da quella funzione nativa *anche dentro una sessione della tua skill
-> custom* — la richiesta non arriva mai al tuo endpoint (lo vedresti da "Skill invocations" vuoto nel
-> simulatore, e dalla risposta con "...alla **tua** lista della spesa", che è la conferma nativa di Amazon,
-> non quella della skill).
+> **Nota:** l'invocation name e le frasi **non devono contenere "lista"** (né "lista della spesa", né
+> "alla spesa" affiancato ad "aggiungi"). Alexa ha una funzione nativa di liste della spesa integrata in
+> ogni Echo, e frasi che le somigliano troppo vengono intercettate da quella funzione nativa *anche dentro
+> una sessione della tua skill custom* — la richiesta non arriva mai al tuo endpoint. Si riconosce
+> dall'esito: "Skill invocations" vuoto nel simulatore, e/o risposta con "...alla **tua** lista della
+> spesa" (conferma nativa di Amazon, non quella della skill). È stato osservato che l'intercettazione può
+> capitare in modo incoerente — stessa struttura di frase, ma un articolo passa e un altro no — quindi
+> **usa sempre e solo le frasi elencate sopra alla lettera** (es. "aggiungi il latte", "segna la pasta"),
+> senza aggiungere "alla spesa"/"alla lista" a mano, anche se suonerebbe più naturale.
 
 4. Menu **Endpoint**:
    - Service Endpoint Type: **HTTPS**
