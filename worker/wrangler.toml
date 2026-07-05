@@ -6,7 +6,7 @@ compatibility_date = "2026-01-01"
 # (lo trovi su dash.cloudflare.com → Workers & Pages → KV)
 [[kv_namespaces]]
 binding = "KV"
-id = "INSERISCI_ID_NAMESPACE_KV"
+id = "522916ba4e8b49a8abcc2f3ead607c4d"
 
 # Segreti da impostare via CLI (NON metterli qui):
 #   wrangler secret put AUTH_TOKEN        → lo stesso token usato nell'app
