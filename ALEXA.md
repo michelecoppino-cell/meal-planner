@@ -4,16 +4,19 @@ Guida per collegare un Echo alla lista della spesa di "Cosa mangiamo?".
 
 Risultato finale:
 
-> **"Alexa, chiedi a lista spesa di aggiungere il latte"**
+> **"Alexa, chiedi a cosa mangiamo di aggiungere il latte"**
 > → *"Ho aggiunto latte alla lista della spesa."*
 > → la voce compare nell'app (tab Spesa, categoria assegnata automaticamente).
 
-> **"Alexa, chiedi a lista spesa cosa devo comprare"**
+> **"Alexa, chiedi a cosa mangiamo cosa devo comprare"**
 > → Alexa legge la lista.
 
 Nota: non si può usare la lista della spesa *nativa* di Alexa perché Amazon ha
 dismesso la List Management API per terze parti (luglio 2024). La skill custom
-qui sotto è la strada supportata — e resta privata sul tuo account.
+qui sotto è la strada supportata — e resta privata sul tuo account. Per lo stesso
+motivo, l'invocation name e le frasi della skill evitano la parola "lista": è il
+trigger della funzione nativa di liste di Alexa e la intercetterebbe al posto
+della skill (vedi nota più sotto).
 
 ## Prerequisito: aggiornare il Worker
 
@@ -41,7 +44,7 @@ Apri l'app → tab Spesa: "latte" deve comparire.
 
 1. Vai su [developer.amazon.com/alexa/console/ask](https://developer.amazon.com/alexa/console/ask) e accedi **con lo stesso account Amazon dei tuoi dispositivi Echo**.
 2. **Create Skill**:
-   - Nome: `Lista spesa` (o come preferisci)
+   - Nome: `Cosa mangiamo` (o come preferisci)
    - Primary locale: **Italian (IT)**
    - Type of experience: **Other** → Model: **Custom**
    - Hosting: **Provision your own**
@@ -52,7 +55,7 @@ Apri l'app → tab Spesa: "latte" deve comparire.
 {
   "interactionModel": {
     "languageModel": {
-      "invocationName": "lista spesa",
+      "invocationName": "cosa mangiamo",
       "intents": [
         { "name": "AMAZON.CancelIntent", "samples": [] },
         { "name": "AMAZON.HelpIntent", "samples": [] },
@@ -63,11 +66,9 @@ Apri l'app → tab Spesa: "latte" deve comparire.
           "slots": [ { "name": "articolo", "type": "AMAZON.Food" } ],
           "samples": [
             "aggiungi {articolo}",
-            "aggiungi {articolo} alla lista",
+            "segna {articolo}",
+            "annota {articolo}",
             "aggiungi {articolo} alla spesa",
-            "aggiungi {articolo} alla lista della spesa",
-            "metti {articolo} in lista",
-            "metti {articolo} nella lista della spesa",
             "mi serve {articolo}",
             "dobbiamo comprare {articolo}",
             "di comprare {articolo}"
@@ -76,11 +77,10 @@ Apri l'app → tab Spesa: "latte" deve comparire.
         {
           "name": "ListaIntent",
           "samples": [
-            "leggi la lista",
-            "leggimi la lista",
-            "cosa c'è in lista",
             "cosa devo comprare",
             "cosa dobbiamo comprare",
+            "cosa manca",
+            "leggimi cosa manca",
             "leggimi la spesa"
           ]
         }
@@ -90,13 +90,24 @@ Apri l'app → tab Spesa: "latte" deve comparire.
 }
 ```
 
+> **Nota:** l'invocation name e le frasi **non devono contenere "lista"** (né "lista della spesa"). Alexa
+> ha una funzione nativa di liste della spesa integrata in ogni Echo, e frasi come "aggiungi X alla lista
+> della spesa" vengono intercettate da quella funzione nativa *anche dentro una sessione della tua skill
+> custom* — la richiesta non arriva mai al tuo endpoint (lo vedresti da "Skill invocations" vuoto nel
+> simulatore, e dalla risposta con "...alla **tua** lista della spesa", che è la conferma nativa di Amazon,
+> non quella della skill).
+
 4. Menu **Endpoint**:
    - Service Endpoint Type: **HTTPS**
    - Default Region URI: `https://meal-planner-api.michelecoppino.workers.dev/alexa`
    - SSL certificate type: **"My development endpoint is a sub-domain of a domain that has a wildcard certificate from a certificate authority"**
    - **Save**, poi di nuovo **Build skill**.
 5. (Consigliato) Copia lo **Skill ID** (in alto, formato `amzn1.ask.skill.xxxx`) e impostalo sul Worker come segreto `ALEXA_SKILL_ID` (Settings → Variables, oppure `wrangler secret put ALEXA_SKILL_ID`). Così solo la tua skill può scrivere in lista.
-6. Tab **Test**: attiva "Development" e prova scrivendo `chiedi a lista spesa di aggiungere il latte`.
+6. Tab **Test**: attiva "Development" e prova scrivendo `chiedi a cosa mangiamo di aggiungere il latte`.
+   - Controlla **"Skill I/O" / "Skill invocations"** nel simulatore: deve mostrare il JSON di request/response.
+     Se resta vuoto, o se Alexa risponde con "...alla **tua** lista della spesa" (con "tua"), la richiesta
+     non ha raggiunto la skill — è stata intercettata dalla lista nativa (vedi nota sopra): rivedi
+     invocation name e frasi, assicurandoti che non contengano "lista".
 
 Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del tuo account, per sempre — non serve pubblicarla.
 
@@ -104,9 +115,9 @@ Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del
 
 | Dici | Succede |
 |---|---|
-| "Alexa, chiedi a lista spesa di aggiungere il pane" | Aggiunge "pane" |
-| "Alexa, apri lista spesa" → "aggiungi le uova" | Modalità dialogo |
-| "Alexa, chiedi a lista spesa cosa devo comprare" | Legge la lista |
+| "Alexa, chiedi a cosa mangiamo di aggiungere il pane" | Aggiunge "pane" |
+| "Alexa, apri cosa mangiamo" → "aggiungi le uova" | Modalità dialogo |
+| "Alexa, chiedi a cosa mangiamo cosa devo comprare" | Legge la lista |
 
 L'app ricarica la lista dal cloud ogni volta che apri il tab **Spesa** (e quando torni sull'app), quindi gli articoli aggiunti a voce compaiono da soli.
 
