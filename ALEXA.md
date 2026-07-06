@@ -22,6 +22,19 @@ prodotto si chiama "farina ceci", il Worker le tratta come la stessa voce
 `normalizeName` in `worker/worker.js`), ma non è un match "intelligente":
 sinonimi veri e propri (es. "pomodoro" vs "pomodori") restano voci distinte.
 
+Nota su imperativo/infinito: in italiano, dopo *"Alexa, chiedi a X **di**..."*
+il verbo va all'infinito ("aggiungere", "togliere"), mentre dopo *"Alexa,
+apri X" → "aggiungi..."* (modalità dialogo) va all'imperativo. Il modello
+qui sotto include entrambe le forme per ogni intent — se in futuro aggiungi
+nuove frasi di esempio, ricordati di duplicarle in entrambi i modi, altrimenti
+Alexa può "ingoiare" l'intera frase (invocation name compreso) dentro allo slot
+invece di riconoscere solo l'articolo.
+
+Nota sull'invocation name: scegline uno facile da pronunciare **in italiano**
+(evita parole inglesi tipo "meal planner"): un nome non italiano rende meno
+affidabile il riconoscimento del punto in cui l'invocation name finisce e
+inizia la frase, aumentando il rischio del problema sopra.
+
 Nota: non si può usare la lista della spesa *nativa* di Alexa perché Amazon ha
 dismesso la List Management API per terze parti (luglio 2024). La skill custom
 qui sotto è la strada supportata — e resta privata sul tuo account.
@@ -71,17 +84,32 @@ Apri l'app → tab Spesa: "latte" deve comparire.
         { "name": "AMAZON.NavigateHomeIntent", "samples": [] },
         {
           "name": "AggiungiIntent",
-          "slots": [ { "name": "articolo", "type": "AMAZON.Food" } ],
+          "slots": [
+            { "name": "articolo", "type": "AMAZON.Food" },
+            { "name": "quantita", "type": "AMAZON.NUMBER" }
+          ],
           "samples": [
             "aggiungi {articolo}",
             "aggiungi {articolo} alla lista",
             "aggiungi {articolo} alla spesa",
             "aggiungi {articolo} alla lista della spesa",
+            "aggiungi {quantita} {articolo}",
+            "aggiungi {quantita} {articolo} alla lista della spesa",
+            "di aggiungere {articolo}",
+            "di aggiungere {articolo} alla lista",
+            "di aggiungere {articolo} alla spesa",
+            "di aggiungere {articolo} alla lista della spesa",
+            "di aggiungere {quantita} {articolo}",
+            "di aggiungere {quantita} {articolo} alla lista della spesa",
             "metti {articolo} in lista",
             "metti {articolo} nella lista della spesa",
+            "di mettere {articolo} in lista",
+            "di mettere {articolo} nella lista della spesa",
             "mi serve {articolo}",
+            "di dire che mi serve {articolo}",
             "dobbiamo comprare {articolo}",
-            "di comprare {articolo}"
+            "di comprare {articolo}",
+            "di dire che dobbiamo comprare {articolo}"
           ]
         },
         {
@@ -93,14 +121,24 @@ Apri l'app → tab Spesa: "latte" deve comparire.
           "samples": [
             "togli {articolo} dalla dispensa",
             "togli {quantita} {articolo} dalla dispensa",
+            "di togliere {articolo} dalla dispensa",
+            "di togliere {quantita} {articolo} dalla dispensa",
             "rimuovi {articolo} dalla dispensa",
             "rimuovi {quantita} {articolo} dalla dispensa",
+            "di rimuovere {articolo} dalla dispensa",
+            "di rimuovere {quantita} {articolo} dalla dispensa",
             "abbiamo finito {articolo}",
+            "di dire che abbiamo finito {articolo}",
             "ho finito {articolo}",
+            "di dire che ho finito {articolo}",
             "segna {articolo} come consumato",
+            "di segnare {articolo} come consumato",
             "consuma {articolo}",
             "consuma {quantita} {articolo}",
-            "scala {quantita} {articolo} dalla dispensa"
+            "di consumare {articolo}",
+            "di consumare {quantita} {articolo}",
+            "scala {quantita} {articolo} dalla dispensa",
+            "di scalare {quantita} {articolo} dalla dispensa"
           ]
         },
         {
@@ -141,10 +179,14 @@ Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del
 | Dici | Succede |
 |---|---|
 | "Alexa, chiedi a lista spesa di aggiungere il pane" | Aggiunge "pane" alla lista della spesa |
+| "Alexa, chiedi a lista spesa di aggiungere 2 pomodori" | Aggiunge "pomodori" con quantità 2 |
 | "Alexa, apri lista spesa" → "aggiungi le uova" | Modalità dialogo |
 | "Alexa, chiedi a lista spesa cosa devo comprare" | Legge la lista |
 | "Alexa, chiedi a lista spesa di togliere il latte dalla dispensa" | Rimuove "latte" dalla dispensa |
 | "Alexa, chiedi a lista spesa di togliere 2 uova dalla dispensa" | Scala la quantità di "uova" di 2 (se non tracciata a quantità, la rimuove) |
+
+Se dici solo "aggiungi il pane" (senza numero), la quantità resta 0 — l'app
+mostra comunque la voce in lista, semplicemente senza quantità indicata.
 
 L'app ricarica la lista dal cloud ogni volta che apri il tab **Spesa** (e quando torni sull'app), quindi gli articoli aggiunti a voce compaiono da soli.
 

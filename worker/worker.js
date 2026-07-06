@@ -105,15 +105,22 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
   if (!Array.isArray(list)) list = [];
 
   const target = normalizeName(clean);
+  const qty = Number(amount) || 0;
   const existing = list.find(
     (i) => i.name && normalizeName(i.name) === target && !i.checked
   );
-  if (existing) return existing;
+  if (existing) {
+    if (qty) {
+      existing.amount = (Number(existing.amount) || 0) + qty;
+      await env.KV.put(SHOPPING_KEY, JSON.stringify(list));
+    }
+    return existing;
+  }
 
   const item = {
     id: Math.random().toString(36).slice(2, 9),
     name: clean,
-    amount: Number(amount) || 0,
+    amount: qty,
     unit: String(unit || ""),
     checked: false,
     manual: true,
@@ -186,9 +193,12 @@ async function handleAlexa(request, env) {
 
     if (intent.name === "AggiungiIntent") {
       const articolo = intent.slots?.articolo?.value;
+      const quantitaRaw = intent.slots?.quantita?.value;
+      const quantita = quantitaRaw ? Number(quantitaRaw) : 0;
       if (!articolo) return alexaSpeak("Cosa devo aggiungere alla lista?", false);
-      await addShoppingItem(env, articolo);
-      return alexaSpeak(`Ho aggiunto ${articolo} alla lista della spesa.`, true);
+      await addShoppingItem(env, articolo, quantita);
+      const qtyText = quantita ? `${quantita} ` : "";
+      return alexaSpeak(`Ho aggiunto ${qtyText}${articolo} alla lista della spesa.`, true);
     }
 
     if (intent.name === "TogliDispensaIntent") {
