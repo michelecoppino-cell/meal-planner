@@ -1,6 +1,6 @@
-# 🗣️ Aggiungere articoli alla spesa con Alexa
+# 🗣️ Aggiungere/togliere articoli con Alexa
 
-Guida per collegare un Echo alla lista della spesa di "Cosa mangiamo?".
+Guida per collegare un Echo alla lista della spesa e alla dispensa di "Cosa mangiamo?".
 
 Risultato finale:
 
@@ -8,8 +8,19 @@ Risultato finale:
 > → *"Ho aggiunto latte alla lista della spesa."*
 > → la voce compare nell'app (tab Spesa, categoria assegnata automaticamente).
 
+> **"Alexa, chiedi a lista spesa di togliere 2 uova dalla dispensa"**
+> → *"Fatto. In dispensa restano 4 di uova."*
+> → **"Alexa, chiedi a lista spesa di togliere il latte dalla dispensa"** (senza quantità) → toglie la voce del tutto.
+
 > **"Alexa, chiedi a lista spesa cosa devo comprare"**
 > → Alexa legge la lista.
+
+Nota sul riconoscimento nomi: Alexa passa al Worker il testo capito dal
+riconoscimento vocale così com'è. Se dici "farina di ceci" ma nell'app il
+prodotto si chiama "farina ceci", il Worker le tratta come la stessa voce
+(ignora articoli/preposizioni come "di/del/della" nel confronto — vedi
+`normalizeName` in `worker/worker.js`), ma non è un match "intelligente":
+sinonimi veri e propri (es. "pomodoro" vs "pomodori") restano voci distinte.
 
 Nota: non si può usare la lista della spesa *nativa* di Alexa perché Amazon ha
 dismesso la List Management API per terze parti (luglio 2024). La skill custom
@@ -74,6 +85,25 @@ Apri l'app → tab Spesa: "latte" deve comparire.
           ]
         },
         {
+          "name": "TogliDispensaIntent",
+          "slots": [
+            { "name": "articolo", "type": "AMAZON.Food" },
+            { "name": "quantita", "type": "AMAZON.NUMBER" }
+          ],
+          "samples": [
+            "togli {articolo} dalla dispensa",
+            "togli {quantita} {articolo} dalla dispensa",
+            "rimuovi {articolo} dalla dispensa",
+            "rimuovi {quantita} {articolo} dalla dispensa",
+            "abbiamo finito {articolo}",
+            "ho finito {articolo}",
+            "segna {articolo} come consumato",
+            "consuma {articolo}",
+            "consuma {quantita} {articolo}",
+            "scala {quantita} {articolo} dalla dispensa"
+          ]
+        },
+        {
           "name": "ListaIntent",
           "samples": [
             "leggi la lista",
@@ -90,13 +120,19 @@ Apri l'app → tab Spesa: "latte" deve comparire.
 }
 ```
 
+Lo slot `articolo` usa il tipo integrato `AMAZON.Food`: copre già un vocabolario
+alimentare ampio e capisce piccole variazioni ("farina di ceci", "farina
+ceci", ecc. vengono comunque passate come testo libero). La normalizzazione
+vera e propria (che accomuna "farina di ceci" e "farina ceci") avviene lato
+Worker, non nello slot — vedi nota più sopra.
+
 4. Menu **Endpoint**:
    - Service Endpoint Type: **HTTPS**
    - Default Region URI: `https://meal-planner-api.michelecoppino.workers.dev/alexa`
    - SSL certificate type: **"My development endpoint is a sub-domain of a domain that has a wildcard certificate from a certificate authority"**
    - **Save**, poi di nuovo **Build skill**.
 5. (Consigliato) Copia lo **Skill ID** (in alto, formato `amzn1.ask.skill.xxxx`) e impostalo sul Worker come segreto `ALEXA_SKILL_ID` (Settings → Variables, oppure `wrangler secret put ALEXA_SKILL_ID`). Così solo la tua skill può scrivere in lista.
-6. Tab **Test**: attiva "Development" e prova scrivendo `chiedi a lista spesa di aggiungere il latte`.
+6. Tab **Test**: attiva "Development" e prova scrivendo `chiedi a lista spesa di aggiungere il latte`, poi `chiedi a lista spesa di togliere il latte dalla dispensa`.
 
 Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del tuo account, per sempre — non serve pubblicarla.
 
@@ -104,9 +140,11 @@ Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del
 
 | Dici | Succede |
 |---|---|
-| "Alexa, chiedi a lista spesa di aggiungere il pane" | Aggiunge "pane" |
+| "Alexa, chiedi a lista spesa di aggiungere il pane" | Aggiunge "pane" alla lista della spesa |
 | "Alexa, apri lista spesa" → "aggiungi le uova" | Modalità dialogo |
 | "Alexa, chiedi a lista spesa cosa devo comprare" | Legge la lista |
+| "Alexa, chiedi a lista spesa di togliere il latte dalla dispensa" | Rimuove "latte" dalla dispensa |
+| "Alexa, chiedi a lista spesa di togliere 2 uova dalla dispensa" | Scala la quantità di "uova" di 2 (se non tracciata a quantità, la rimuove) |
 
 L'app ricarica la lista dal cloud ogni volta che apri il tab **Spesa** (e quando torni sull'app), quindi gli articoli aggiunti a voce compaiono da soli.
 
