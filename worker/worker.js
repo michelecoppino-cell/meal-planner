@@ -6,7 +6,10 @@
 //   POST /add-item        → {name, amount?, unit?} appende    (richiede header X-Auth)
 //                           una voce alla lista della spesa
 //   POST /alexa           → endpoint per la skill Alexa custom (verifica lo skill ID,
-//                           vedi ALEXA.md nella root del repo)
+//                           vedi ALEXA.md nella root del repo). Gestisce:
+//                             - AggiungiIntent      → aggiunge alla lista della spesa
+//                             - TogliDispensaIntent  → toglie/scala dalla dispensa
+//                             - ListaIntent          → legge la lista della spesa
 //
 // Configurazione (vedi wrangler.toml):
 //   - binding KV:            namespace Workers KV
@@ -14,6 +17,30 @@
 //   - secret ALEXA_SKILL_ID: wrangler secret put ALEXA_SKILL_ID (opzionale ma consigliato)
 
 const SHOPPING_KEY = "cm:s:v1";
+const PANTRY_KEY = "cm:p:v1";
+
+// Parole italiane da ignorare nel confronto tra nomi prodotto, così
+// "farina di ceci" (dettato ad Alexa) combacia con "farina ceci" (nome
+// salvato nell'app). Non è un match semantico: toglie solo articoli e
+// preposizioni, non tocca le parole "di contenuto" (es. non confonde
+// "aceto di mele" con "aceto di vino").
+const STOPWORDS = new Set([
+  "di", "d", "del", "dello", "della", "dei", "degli", "delle",
+  "il", "lo", "la", "i", "gli", "le", "un", "uno", "una",
+]);
+
+function normalizeName(name) {
+  const cleaned = String(name)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // rimuove accenti
+    .toLowerCase()
+    .replace(/'/g, " ") // "d'avena" → "d avena" (il "d" viene poi tolto come stopword)
+    .replace(/[^a-z0-9\s]/g, " ");
+  return cleaned
+    .split(/\s+/)
+    .filter((w) => w && !STOPWORDS.has(w))
+    .join(" ")
+    .trim();
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -77,8 +104,9 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
   try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
   if (!Array.isArray(list)) list = [];
 
+  const target = normalizeName(clean);
   const existing = list.find(
-    (i) => i.name && i.name.toLowerCase() === clean.toLowerCase() && !i.checked
+    (i) => i.name && normalizeName(i.name) === target && !i.checked
   );
   if (existing) return existing;
 
@@ -94,6 +122,37 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
   list.push(item);
   await env.KV.put(SHOPPING_KEY, JSON.stringify(list));
   return item;
+}
+
+async function getPantry(env) {
+  const raw = await env.KV.get(PANTRY_KEY);
+  let list = [];
+  try { list = raw ? JSON.parse(raw) : []; } catch { list = []; }
+  return Array.isArray(list) ? list : [];
+}
+
+// Toglie un articolo dalla dispensa. Se è indicata una quantità e
+// l'articolo ne tiene traccia, scala solo quella quantità (senza andare
+// sotto zero); altrimenti (o se la quantità arriva a zero) lo rimuove del tutto.
+async function removePantryItem(env, name, qty) {
+  const target = normalizeName(name);
+  const list = await getPantry(env);
+  const idx = list.findIndex((p) => p.name && normalizeName(p.name) === target);
+  if (idx === -1) return { found: false };
+
+  const item = list[idx];
+  if (qty && item.qty != null) {
+    const remaining = Math.max(0, Math.round((item.qty - qty) * 100) / 100);
+    if (remaining > 0) {
+      item.qty = remaining;
+      await env.KV.put(PANTRY_KEY, JSON.stringify(list));
+      return { found: true, removed: false, item, remaining };
+    }
+  }
+
+  list.splice(idx, 1);
+  await env.KV.put(PANTRY_KEY, JSON.stringify(list));
+  return { found: true, removed: true, item };
 }
 
 // ── Alexa custom skill ─────────────────────────────────────────────
@@ -115,7 +174,7 @@ async function handleAlexa(request, env) {
   const type = body?.request?.type;
 
   if (type === "LaunchRequest") {
-    return alexaSpeak("Ciao! Cosa devo aggiungere alla lista della spesa?", false);
+    return alexaSpeak("Ciao! Cosa devo aggiungere alla lista, o togliere dalla dispensa?", false);
   }
 
   if (type === "SessionEndedRequest") {
@@ -132,6 +191,23 @@ async function handleAlexa(request, env) {
       return alexaSpeak(`Ho aggiunto ${articolo} alla lista della spesa.`, true);
     }
 
+    if (intent.name === "TogliDispensaIntent") {
+      const articolo = intent.slots?.articolo?.value;
+      const quantitaRaw = intent.slots?.quantita?.value;
+      const quantita = quantitaRaw ? Number(quantitaRaw) : null;
+      if (!articolo) return alexaSpeak("Cosa devo togliere dalla dispensa?", false);
+
+      const result = await removePantryItem(env, articolo, quantita);
+      if (!result.found) {
+        return alexaSpeak(`Non ho trovato ${articolo} in dispensa.`, true);
+      }
+      if (result.removed) {
+        return alexaSpeak(`Ho tolto ${articolo} dalla dispensa.`, true);
+      }
+      const unit = result.item.unit ? ` ${result.item.unit}` : "";
+      return alexaSpeak(`Fatto. In dispensa restano ${result.remaining}${unit} di ${articolo}.`, true);
+    }
+
     if (intent.name === "ListaIntent") {
       const raw = await env.KV.get(SHOPPING_KEY);
       let list = [];
@@ -144,7 +220,7 @@ async function handleAlexa(request, env) {
     }
 
     if (intent.name === "AMAZON.HelpIntent") {
-      return alexaSpeak("Puoi dire: aggiungi il latte, oppure: leggi la lista.", false);
+      return alexaSpeak("Puoi dire: aggiungi il latte alla lista, togli le uova dalla dispensa, oppure: leggi la lista.", false);
     }
 
     if (intent.name === "AMAZON.StopIntent" || intent.name === "AMAZON.CancelIntent") {
@@ -152,7 +228,7 @@ async function handleAlexa(request, env) {
     }
   }
 
-  return alexaSpeak("Non ho capito. Puoi dire: aggiungi il latte, oppure: leggi la lista.", false);
+  return alexaSpeak("Non ho capito. Puoi dire: aggiungi il latte alla lista, oppure: togli le uova dalla dispensa.", false);
 }
 
 function alexaSpeak(text, endSession) {
