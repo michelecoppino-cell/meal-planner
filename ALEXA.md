@@ -5,8 +5,16 @@ Guida per collegare un Echo alla lista della spesa e alla dispensa di "Cosa mang
 Risultato finale:
 
 > **"Alexa, chiedi a lista spesa di aggiungere il latte"**
-> → *"Ho aggiunto latte alla lista della spesa."*
+> → *"Aggiunto latte al planner."*
 > → la voce compare nell'app (tab Spesa, categoria assegnata automaticamente).
+
+Nota: la risposta dice **"al planner"** (non "alla tua lista della spesa") apposta,
+per distinguerla a colpo d'occhio dalla risposta di default della lista nativa
+di Alexa. Se qualcosa va storto (es. il Worker non riesce a scrivere su KV),
+Alexa lo dice esplicitamente ("Non sono riuscito ad aggiungere ... al planner.
+Riprova tra poco.") invece di confermare a vuoto — se senti questo messaggio
+ripetutamente, controlla i log del Worker (`npx wrangler tail` da `worker/`)
+per vedere l'errore reale.
 
 > **"Alexa, chiedi a lista spesa di togliere 2 uova dalla dispensa"**
 > → *"Fatto. In dispensa restano 4 di uova."*
@@ -178,8 +186,8 @@ Fatto. La skill in modalità **Development** funziona già su tutti gli Echo del
 
 | Dici | Succede |
 |---|---|
-| "Alexa, chiedi a lista spesa di aggiungere il pane" | Aggiunge "pane" alla lista della spesa |
-| "Alexa, chiedi a lista spesa di aggiungere 2 pomodori" | Aggiunge "pomodori" con quantità 2 |
+| "Alexa, chiedi a lista spesa di aggiungere il pane" | "Aggiunto pane al planner." — "pane" compare nella lista della spesa |
+| "Alexa, chiedi a lista spesa di aggiungere 2 pomodori" | "Aggiunto 2 pomodori al planner." — con quantità 2 |
 | "Alexa, apri lista spesa" → "aggiungi le uova" | Modalità dialogo |
 | "Alexa, chiedi a lista spesa cosa devo comprare" | Legge la lista |
 | "Alexa, chiedi a lista spesa di togliere il latte dalla dispensa" | Rimuove "latte" dalla dispensa |

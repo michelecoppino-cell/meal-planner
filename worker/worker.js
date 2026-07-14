@@ -181,7 +181,7 @@ async function handleAlexa(request, env) {
   const type = body?.request?.type;
 
   if (type === "LaunchRequest") {
-    return alexaSpeak("Ciao! Cosa devo aggiungere alla lista, o togliere dalla dispensa?", false);
+    return alexaSpeak("Ciao! Cosa devo aggiungere al planner, o togliere dalla dispensa?", false);
   }
 
   if (type === "SessionEndedRequest") {
@@ -195,42 +195,55 @@ async function handleAlexa(request, env) {
       const articolo = intent.slots?.articolo?.value;
       const quantitaRaw = intent.slots?.quantita?.value;
       const quantita = quantitaRaw ? Number(quantitaRaw) : 0;
-      if (!articolo) return alexaSpeak("Cosa devo aggiungere alla lista?", false);
-      await addShoppingItem(env, articolo, quantita);
+      if (!articolo) return alexaSpeak("Cosa devo aggiungere al planner?", false);
+      try {
+        await addShoppingItem(env, articolo, quantita);
+      } catch (err) {
+        return alexaSpeak(`Non sono riuscito ad aggiungere ${articolo} al planner. Riprova tra poco.`, true);
+      }
       const qtyText = quantita ? `${quantita} ` : "";
-      return alexaSpeak(`Ho aggiunto ${qtyText}${articolo} alla lista della spesa.`, true);
+      return alexaSpeak(`Aggiunto ${qtyText}${articolo} al planner.`, true);
     }
 
     if (intent.name === "TogliDispensaIntent") {
       const articolo = intent.slots?.articolo?.value;
       const quantitaRaw = intent.slots?.quantita?.value;
       const quantita = quantitaRaw ? Number(quantitaRaw) : null;
-      if (!articolo) return alexaSpeak("Cosa devo togliere dalla dispensa?", false);
+      if (!articolo) return alexaSpeak("Cosa devo togliere dalla dispensa del planner?", false);
 
-      const result = await removePantryItem(env, articolo, quantita);
+      let result;
+      try {
+        result = await removePantryItem(env, articolo, quantita);
+      } catch (err) {
+        return alexaSpeak(`Non sono riuscito a togliere ${articolo} dalla dispensa del planner. Riprova tra poco.`, true);
+      }
       if (!result.found) {
-        return alexaSpeak(`Non ho trovato ${articolo} in dispensa.`, true);
+        return alexaSpeak(`Non ho trovato ${articolo} nella dispensa del planner.`, true);
       }
       if (result.removed) {
-        return alexaSpeak(`Ho tolto ${articolo} dalla dispensa.`, true);
+        return alexaSpeak(`Tolto ${articolo} dalla dispensa del planner.`, true);
       }
       const unit = result.item.unit ? ` ${result.item.unit}` : "";
-      return alexaSpeak(`Fatto. In dispensa restano ${result.remaining}${unit} di ${articolo}.`, true);
+      return alexaSpeak(`Fatto. Nella dispensa del planner restano ${result.remaining}${unit} di ${articolo}.`, true);
     }
 
     if (intent.name === "ListaIntent") {
-      const raw = await env.KV.get(SHOPPING_KEY);
       let list = [];
-      try { list = raw ? JSON.parse(raw) : []; } catch {}
+      try {
+        const raw = await env.KV.get(SHOPPING_KEY);
+        list = raw ? JSON.parse(raw) : [];
+      } catch (err) {
+        return alexaSpeak("Non riesco a leggere la lista del planner in questo momento. Riprova tra poco.", true);
+      }
       const todo = (Array.isArray(list) ? list : []).filter((i) => !i.checked).map((i) => i.name);
-      if (!todo.length) return alexaSpeak("La lista della spesa è vuota.", true);
+      if (!todo.length) return alexaSpeak("La lista della spesa del planner è vuota.", true);
       const first = todo.slice(0, 15);
       const extra = todo.length > 15 ? `, e altri ${todo.length - 15} articoli` : "";
-      return alexaSpeak(`In lista ci sono: ${first.join(", ")}${extra}.`, true);
+      return alexaSpeak(`Nel planner ci sono: ${first.join(", ")}${extra}.`, true);
     }
 
     if (intent.name === "AMAZON.HelpIntent") {
-      return alexaSpeak("Puoi dire: aggiungi il latte alla lista, togli le uova dalla dispensa, oppure: leggi la lista.", false);
+      return alexaSpeak("Puoi dire: aggiungi il latte al planner, togli le uova dalla dispensa, oppure: leggi la lista.", false);
     }
 
     if (intent.name === "AMAZON.StopIntent" || intent.name === "AMAZON.CancelIntent") {
