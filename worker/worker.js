@@ -1,8 +1,12 @@
 // Cloudflare Worker per "Cosa mangiamo?"
 //
 // Endpoint:
-//   GET  /get?key=...     → legge un valore dal KV            (richiede header X-Auth)
-//   POST /set             → {key, value} scrive nel KV        (richiede header X-Auth)
+//   GET  /get?key=...     → legge un valore dal KV, con "version" (richiede header X-Auth)
+//                           (timestamp dell'ultima scrittura, dai metadata KV)
+//   POST /set             → {key, value, expectedVersion?} scrive nel KV (richiede header X-Auth)
+//                           se expectedVersion è indicata e non combacia con quella corrente,
+//                           risponde 409 con il valore/versione attuali invece di sovrascrivere
+//                           alla cieca (evita che due dispositivi si cancellino le modifiche a vicenda)
 //   POST /add-item        → {name, amount?, unit?} appende    (richiede header X-Auth)
 //                           una voce alla lista della spesa
 //   POST /alexa           → endpoint per la skill Alexa custom (verifica lo skill ID,
@@ -75,17 +79,29 @@ export default {
     if (url.pathname === "/get" && request.method === "GET") {
       const key = url.searchParams.get("key");
       if (!key) return json({ error: "missing key" }, 400);
-      const value = await env.KV.get(key);
-      return json({ value });
+      const { value, metadata } = await env.KV.getWithMetadata(key);
+      return json({ value, version: metadata && typeof metadata.t === "number" ? metadata.t : null });
     }
 
+    // "expectedVersion" abilita la scrittura ottimistica: se un altro dispositivo ha scritto nel
+    // frattempo (versione diversa da quella letta l'ultima volta), rifiuta con 409 e restituisce il
+    // valore corrente invece di sovrascriverlo alla cieca. Omesso (client mai sincronizzato su
+    // questa chiave) la scrittura procede sempre, per restare compatibile con client più vecchi.
     if (url.pathname === "/set" && request.method === "POST") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "bad request" }, 400); }
-      const { key, value } = body;
+      const { key, value, expectedVersion } = body;
       if (!key) return json({ error: "missing key" }, 400);
-      await env.KV.put(key, value);
-      return json({ ok: true });
+      if (typeof expectedVersion === "number") {
+        const current = await env.KV.getWithMetadata(key);
+        const currentVersion = current.metadata && typeof current.metadata.t === "number" ? current.metadata.t : null;
+        if (currentVersion !== expectedVersion) {
+          return json({ error: "conflict", value: current.value, version: currentVersion }, 409);
+        }
+      }
+      const version = Date.now();
+      await env.KV.put(key, value, { metadata: { t: version } });
+      return json({ ok: true, version });
     }
 
     if (url.pathname === "/add-item" && request.method === "POST") {
@@ -116,7 +132,7 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
   if (existing) {
     if (qty) {
       existing.amount = (Number(existing.amount) || 0) + qty;
-      await env.KV.put(SHOPPING_KEY, JSON.stringify(list));
+      await env.KV.put(SHOPPING_KEY, JSON.stringify(list), { metadata: { t: Date.now() } });
     }
     return existing;
   }
@@ -131,7 +147,7 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
     category: "varie", // l'app ricategorizza le voci manuali al caricamento
   };
   list.push(item);
-  await env.KV.put(SHOPPING_KEY, JSON.stringify(list));
+  await env.KV.put(SHOPPING_KEY, JSON.stringify(list), { metadata: { t: Date.now() } });
   return item;
 }
 
@@ -156,13 +172,13 @@ async function removePantryItem(env, name, qty) {
     const remaining = Math.max(0, Math.round((item.qty - qty) * 100) / 100);
     if (remaining > 0) {
       item.qty = remaining;
-      await env.KV.put(PANTRY_KEY, JSON.stringify(list));
+      await env.KV.put(PANTRY_KEY, JSON.stringify(list), { metadata: { t: Date.now() } });
       return { found: true, removed: false, item, remaining };
     }
   }
 
   list.splice(idx, 1);
-  await env.KV.put(PANTRY_KEY, JSON.stringify(list));
+  await env.KV.put(PANTRY_KEY, JSON.stringify(list), { metadata: { t: Date.now() } });
   return { found: true, removed: true, item };
 }
 
