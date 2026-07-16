@@ -17,16 +17,30 @@
   .app { max-width: 720px; margin: 0 auto; background: #fff; min-height: 100vh; }
 
   /* HEADER */
-  .header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px 0; }
-  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .header { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 16px; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; }
   .header h1 { font-size: 17px; font-weight: 700; }
-  .tabs { display: flex; overflow-x: auto; gap: 0; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { flex-shrink: 0; padding: 8px 12px; font-size: 12px; font-weight: 400; color: #888; border-bottom: 2.5px solid transparent; margin-bottom: -1px; white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none; cursor: pointer; }
-  .tab.active { font-weight: 700; color: #111; border-bottom-color: #111; }
+
+  /* BOTTOM NAV */
+  .bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; background: #fff; border-top: 1px solid #e8e8e8; max-width: 720px; margin: 0 auto; padding-bottom: env(safe-area-inset-bottom); }
+  .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 7px; font-size: 10.5px; font-weight: 600; color: #999; background: none; border: none; cursor: pointer; font-family: inherit; position: relative; }
+  .nav-item .nav-icon { font-size: 19px; line-height: 1; filter: grayscale(1) opacity(0.6); }
+  .nav-item.active { color: #111; }
+  .nav-item.active .nav-icon { filter: none; }
+  .nav-dot { position: absolute; top: 4px; right: calc(50% - 16px); width: 8px; height: 8px; border-radius: 50%; background: #DC2626; border: 1.5px solid #fff; }
+
+  /* SEGMENTED TOGGLE */
+  .segmented { display: flex; background: #F0F0F0; border-radius: 10px; padding: 3px; margin-bottom: 14px; }
+  .segmented button { flex: 1; padding: 7px 0; font-size: 13px; font-weight: 600; color: #777; border-radius: 8px; background: none; border: none; cursor: pointer; font-family: inherit; }
+  .segmented button.active { background: #fff; color: #111; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+
+  /* TOAST */
+  .toast { position: fixed; left: 50%; bottom: 78px; transform: translateX(-50%) translateY(12px); background: #222; color: #fff; padding: 11px 14px 11px 16px; border-radius: 11px; font-size: 13px; display: flex; align-items: center; gap: 14px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 300; max-width: calc(100% - 32px); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+  .toast button { color: #8AB4FF; font-weight: 700; font-size: 13px; white-space: nowrap; flex-shrink: 0; }
 
   /* CONTENT */
-  .content { padding: 16px 16px 80px; }
+  .content { padding: 16px 16px 88px; }
 
   /* CARDS */
   .card { background: #fff; border: 1px solid #eee; border-radius: 12px; overflow: hidden; }
@@ -132,9 +146,9 @@
   @media (min-width: 640px) {
     .app { border-left: 1px solid #eee; border-right: 1px solid #eee; }
     .content { padding: 24px 32px 100px; }
-    .header { padding: 16px 32px 0; }
+    .header { padding: 16px 32px; }
     .header h1 { font-size: 20px; }
-    .tab { padding: 10px 16px; font-size: 13px; }
+    .bottom-nav { border-left: 1px solid #eee; border-right: 1px solid #eee; }
     .recipe-grid { gap: 14px; }
   }
 </style>
@@ -146,9 +160,10 @@
       <h1>🥗 Cosa mangiamo?</h1>
       <span id="storage-badge" class="storage-badge hidden" style="cursor:pointer" onclick="switchTab('impostazioni')">⚠ Pubblica per salvare</span>
     </div>
-    <div class="tabs" id="tabs"></div>
   </div>
   <div class="content" id="content"></div>
+  <nav class="bottom-nav" id="bottom-nav"></nav>
+  <div class="toast" id="toast"></div>
 </div>
 
 <script>
@@ -249,6 +264,33 @@ function getMergedCatMap() {
 function getAllKnownIngredients() {
   return Object.keys(getMergedCatMap()).sort((a,b)=>a.localeCompare(b,"it"));
 }
+
+// ── Ordine categorie (Dispensa/Spesa/Impostazioni) ─────
+// Personalizzabile per seguire il percorso reale al supermercato; salvato per dispositivo
+// come le regole di categorizzazione (cm:catmap), a cui è affiancato.
+function getCatOrder() {
+  let order;
+  try { order = JSON.parse(localStorage.getItem("cm:catorder") || "null"); } catch { order = null; }
+  if (!Array.isArray(order)) order = [];
+  const known = SHOP_CATS.map(c => c.id);
+  const cleaned = order.filter(id => known.includes(id));
+  for (const id of known) if (!cleaned.includes(id)) cleaned.push(id);
+  return cleaned;
+}
+function setCatOrder(order) { localStorage.setItem("cm:catorder", JSON.stringify(order)); }
+function orderedShopCats() {
+  const byId = Object.fromEntries(SHOP_CATS.map(c => [c.id, c]));
+  return getCatOrder().map(id => byId[id]).filter(Boolean);
+}
+function moveCatOrder(catId, targetId) {
+  if (!targetId) return;
+  const order = getCatOrder();
+  const i = order.indexOf(catId), j = order.indexOf(targetId);
+  if (i < 0 || j < 0) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  setCatOrder(order);
+  render();
+}
 // Contiene needle come parola intera ("farina di ceci" contiene "ceci", "insalata" non contiene "sale")
 function containsWord(hay, needle) {
   let idx = hay.indexOf(needle);
@@ -337,7 +379,8 @@ const SEED_BREAKFASTS = [
 // STATO
 // ═══════════════════════════════════════════════════════
 let state = {
-  tab: "paniere",
+  tab: "oggi",
+  mealView: "cene",
   view: "list",
   detailId: null,
   detailType: null,
@@ -353,6 +396,8 @@ let state = {
   breakfasts: JSON.parse(JSON.stringify(SEED_BREAKFASTS)),
   weekPlan: {},
   weekBreakfast: {},
+  weekLunch: {},
+  editLunchDay: null,
   pantry: [],
   shopping: [],
   desired: {},
@@ -378,9 +423,13 @@ const WORKER_URL = "https://meal-planner-api.michelecoppino.workers.dev";
 function getToken() { try { return localStorage.getItem("cm:token") || ""; } catch { return ""; } }
 // ───────────────────────────────────────────────────────
 
-const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1",d:"cm:d:v1"};
+const SK = {r:"cm:r:v1",w:"cm:w:v1",p:"cm:p:v1",s:"cm:s:v1",b:"cm:b:v1",wb:"cm:wb:v1",wl:"cm:wl:v1",d:"cm:d:v1"};
 // "d" (scorte desiderate) prima di "p": il caricamento della dispensa vi aggiunge i default
-const STORE_KEYS = ["r","w","b","wb","d","p","s"];
+const STORE_KEYS = ["r","w","b","wb","wl","d","p","s"];
+
+// Versione (timestamp) dell'ultimo valore remoto conosciuto per ciascuna chiave KV: usata per la
+// scrittura ottimistica in sSet, così due dispositivi non si sovrascrivono a vicenda in silenzio.
+const _remoteVersion = {};
 
 async function sGet(key) {
   const token = getToken();
@@ -391,21 +440,31 @@ async function sGet(key) {
     });
     if (!r.ok) return null;
     const d = await r.json();
+    if (typeof d.version === "number") _remoteVersion[key] = d.version;
     return d.value ? JSON.parse(d.value) : null;
   } catch { return null; }
 }
 
+// Ritorna {ok}, {ok:false} (errore/rete), oppure {ok:false, conflict:true, remoteValue} se un
+// altro dispositivo ha scritto nel frattempo (versione remota diversa da quella letta l'ultima volta).
 async function sSet(key, val) {
   const token = getToken();
-  if (!token) return false;
+  if (!token) return {ok: false};
   try {
     const r = await fetch(`${WORKER_URL}/set`, {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-Auth": token},
-      body: JSON.stringify({key, value: JSON.stringify(val)})
+      body: JSON.stringify({key, value: JSON.stringify(val), expectedVersion: _remoteVersion[key]})
     });
-    return r.ok;
-  } catch { return false; }
+    const d = await r.json().catch(() => null);
+    if (r.status === 409) {
+      if (d && typeof d.version === "number") _remoteVersion[key] = d.version;
+      return {ok: false, conflict: true, remoteValue: d && d.value ? JSON.parse(d.value) : null};
+    }
+    if (!r.ok) return {ok: false};
+    if (d && typeof d.version === "number") _remoteVersion[key] = d.version;
+    return {ok: true};
+  } catch { return {ok: false}; }
 }
 
 function applyVal(k, val) {
@@ -421,6 +480,7 @@ function applyVal(k, val) {
   else if (k==="s") state.shopping = val.map(i => i.manual ? {...i, category: categorizeItem(i.name)} : i);
   else if (k==="b") state.breakfasts = val;
   else if (k==="wb") state.weekBreakfast = migrateWeekData(val);
+  else if (k==="wl") state.weekLunch = migrateWeekData(val);
 }
 
 function loadLocal() {
@@ -437,16 +497,65 @@ async function loadRemote() {
   STORE_KEYS.forEach((k, i) => applyVal(k, vals[i]));
 }
 
+// Rifà il refresh di tutte le chiavi dal Worker (ritorno in foreground da un altro dispositivo che
+// potrebbe aver scritto nel frattempo). Salta le chiavi con un salvataggio locale ancora in volo,
+// per non sovrascriverle con un fetch potenzialmente già superato.
+async function refreshAllFromRemote() {
+  if (!getToken()) return;
+  const vals = await Promise.all(STORE_KEYS.map(k => hasPendingSave(k) ? Promise.resolve(undefined) : sGet(SK[k])));
+  let changed = false;
+  STORE_KEYS.forEach((k, i) => {
+    const v = vals[i];
+    if (v === undefined) return;
+    applyVal(k, v);
+    changed = true;
+    if (v !== null) { try { localStorage.setItem(SK[k], JSON.stringify(v)); } catch {} }
+  });
+  if (changed) render();
+}
+
+// Unione "migliore sforzo" per conflitti sulla lista della spesa: le voci del salvataggio locale
+// (appena spuntate/aggiunte su questo dispositivo) vincono a parità di id, ma le voci presenti solo
+// nella versione remota (aggiunte da un altro dispositivo nel frattempo) vengono comunque incluse.
+function mergeShoppingConflict(localVal, remoteVal) {
+  const byId = new Map();
+  for (const i of remoteVal) byId.set(i.id, i);
+  for (const i of localVal) byId.set(i.id, i);
+  return Array.from(byId.values());
+}
+
 // Coda per chiave: serializza le scritture verso il Worker, così un salvataggio
 // lento non può sovrascrivere in ritardo uno più recente.
 const _saveQueue = {};
+const _pendingCount = {};
+function hasPendingSave(k) { return (_pendingCount[SK[k]] || 0) > 0; }
+
 function save(k, val) {
   try { localStorage.setItem(SK[k], JSON.stringify(val)); } catch {}
   if (!getToken()) { updateSyncBadge("⚙️ Sync non attiva — tocca qui"); return; }
   const payload = JSON.stringify(val);
+  const kvKey = SK[k];
+  _pendingCount[kvKey] = (_pendingCount[kvKey] || 0) + 1;
   _saveQueue[k] = (_saveQueue[k] || Promise.resolve())
-    .then(() => sSet(SK[k], JSON.parse(payload)))
-    .then(ok => updateSyncBadge(ok ? null : "⚠ Errore salvataggio"));
+    .then(() => sSet(kvKey, JSON.parse(payload)))
+    .then(res => {
+      _pendingCount[kvKey] = Math.max(0, (_pendingCount[kvKey] || 0) - 1);
+      handleSaveResult(k, JSON.parse(payload), res);
+    });
+}
+
+function handleSaveResult(k, localVal, res) {
+  if (res.ok) { updateSyncBadge(null); return; }
+  if (res.conflict && res.remoteValue !== null && res.remoteValue !== undefined) {
+    const merged = k === "s" ? mergeShoppingConflict(localVal, res.remoteValue) : res.remoteValue;
+    applyVal(k, merged);
+    try { localStorage.setItem(SK[k], JSON.stringify(merged)); } catch {}
+    render();
+    toast(k === "s" ? "Lista della spesa sincronizzata con un altro dispositivo" : "Dati aggiornati da un altro dispositivo");
+    save(k, merged); // riallinea il Worker alla versione unita, ora aggiornata
+    return;
+  }
+  updateSyncBadge("⚠ Errore salvataggio");
 }
 
 // ═══════════════════════════════════════════════════════
@@ -457,6 +566,15 @@ function uid() { return Math.random().toString(36).slice(2,9); }
 const CUSTOM_PREFIX = "__custom__:";
 function isCustomEntry(v) { return typeof v === "string" && v.startsWith(CUSTOM_PREFIX); }
 function customName(v) { return v.slice(CUSTOM_PREFIX.length); }
+// Una voce di piano (cena/colazione) è una stringa id (scala 1×), un oggetto
+// {id,scale} per porzioni scalate, o una stringa custom (CUSTOM_PREFIX).
+function planRef(raw) {
+  if (!raw) return null;
+  if (isCustomEntry(raw)) return {custom:true, text: customName(raw)};
+  if (typeof raw === "object" && raw.id) return {custom:false, id: raw.id, scale: raw.scale > 0 ? raw.scale : 1};
+  return {custom:false, id: raw, scale: 1};
+}
+function planRawFor(id, scale) { return scale && scale !== 1 ? {id, scale} : id; }
 function h(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 // Per valori interpolati dentro stringhe JS negli attributi onclick: prima escape JS, poi HTML
 function ja(str) { return h(String(str).replace(/\\/g,"\\\\").replace(/'/g,"\\'")); }
@@ -474,6 +592,12 @@ function currentBPlan() {
   const k = weekKey(state.weekOffset);
   if (!state.weekBreakfast[k]) state.weekBreakfast[k] = {};
   return state.weekBreakfast[k];
+}
+// Pranzo: {giorno: "testo custom"} — assente = automatico (avanzi della cena precedente)
+function currentLunchPlan() {
+  const k = weekKey(state.weekOffset);
+  if (!state.weekLunch[k]) state.weekLunch[k] = {};
+  return state.weekLunch[k];
 }
 // Vecchio formato: {Lunedì: rid, ...} → nuovo: {"YYYY-MM-DD": {Lunedì: rid, ...}}
 function migrateWeekData(obj) {
@@ -529,6 +653,23 @@ function desiredMissing(key) {
   return {missing: d.q, unit: d.u, name: p.name};
 }
 
+// ── Toast (sostituisce confirm()/alert() nativi) ───────
+let _toastTimer = null;
+function toast(message, opts) {
+  opts = opts || {};
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.innerHTML = `<span>${h(message)}</span>${opts.actionLabel ? `<button onclick="_toastAction()">${h(opts.actionLabel)}</button>` : ""}`;
+  window._toastAction = () => { hideToast(); if (opts.onAction) opts.onAction(); };
+  el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(hideToast, opts.duration || 4500);
+}
+function hideToast() {
+  const el = document.getElementById("toast");
+  if (el) el.classList.remove("show");
+}
+
 function updateSyncBadge(text) {
   const b = document.getElementById("storage-badge");
   if (!b) return;
@@ -578,20 +719,23 @@ function generateShoppingList() {
   const meals = [];
   for (const v of Object.values(plan)) {
     if (!v || isCustomEntry(v)) continue;
-    const r = state.recipes.find(x => x.id === v);
-    if (r) meals.push(r);
+    const ref = planRef(v);
+    const r = state.recipes.find(x => x.id === ref.id);
+    if (r) meals.push({item: r, scale: ref.scale});
   }
   for (const v of Object.values(bplan)) {
     if (!v || isCustomEntry(v)) continue;
-    const b = state.breakfasts.find(x => x.id === v);
-    if (b) meals.push(b);
+    const ref = planRef(v);
+    const b = state.breakfasts.find(x => x.id === ref.id);
+    if (b) meals.push({item: b, scale: ref.scale});
   }
   const agg = {};
   for (const m of meals) {
-    for (const ing of m.ing) {
+    for (const ing of m.item.ing) {
       const key = ing.n.toLowerCase().trim() + "::" + ing.u;
-      if (agg[key]) { if (ing.u !== "qb") agg[key].amount += ing.a; }
-      else agg[key] = {name: ing.n, amount: ing.a, unit: ing.u};
+      const amt = ing.u === "qb" ? ing.a : Math.round(ing.a * m.scale * 100) / 100;
+      if (agg[key]) { if (ing.u !== "qb") agg[key].amount += amt; }
+      else agg[key] = {name: ing.n, amount: amt, unit: ing.u};
     }
   }
   const pmap = new Map(state.pantry.map(p => [p.name.toLowerCase().trim(), p]));
@@ -631,14 +775,16 @@ function generateShoppingList() {
 }
 
 // ═══════════════════════════════════════════════════════
-// RENDER TABS
+// BOTTOM NAV
 // ═══════════════════════════════════════════════════════
-const TABS = [["paniere","Ricette"],["colazioni","Colazioni"],["settimana","Settimana"],["dispensa","Dispensa"],["spesa","Spesa"],["impostazioni","Impostazioni"]];
-function renderTabs() {
+const TABS = [["oggi","Oggi","🏠"],["ricette","Ricette","🍽️"],["settimana","Settimana","📅"],["dispensa","Dispensa","🧺"],["spesa","Spesa","🛒"],["impostazioni","Imp.","⚙️"]];
+function renderBottomNav() {
   const expWarn = expiringItems().length > 0;
-  document.getElementById("tabs").innerHTML = TABS.map(([id,label]) =>
-    `<button class="tab ${state.tab===id?'active':''}" onclick="switchTab('${id}')">${label}${id==="dispensa"&&expWarn?" ⚠️":""}</button>`
-  ).join("");
+  const shopTodo = state.shopping.some(i => !i.checked);
+  document.getElementById("bottom-nav").innerHTML = TABS.map(([id,label,icon]) => {
+    const showDot = (id==="dispensa"&&expWarn) || (id==="spesa"&&shopTodo);
+    return `<button class="nav-item ${state.tab===id?'active':''}" onclick="switchTab('${id}')">${showDot?'<span class="nav-dot"></span>':''}<span class="nav-icon">${icon}</span><span>${label}</span></button>`;
+  }).join("");
 }
 
 // ═══════════════════════════════════════════════════════
@@ -666,6 +812,90 @@ function bMeta(prepAhead) {
 }
 function searchBox() {
   return `<div style="margin-bottom:12px"><input class="input" id="recipe-search" value="${h(state.searchQuery)}" placeholder="\ud83d\udd0d Cerca per nome o ingrediente..." autocomplete="off" oninput="setSearch(this.value)"></div>`;
+}
+
+// Tab "Oggi": colazione/pranzo/cena del giorno corrente, promemoria serale,
+// scadenze imminenti e stato della lista della spesa — sempre riferito alla settimana
+// reale di oggi, indipendentemente da quale settimana si sta sfogliando in "Settimana".
+function renderOggi() {
+  const todayIdx = (new Date().getDay() + 6) % 7; // Lunedì=0 ... Domenica=6
+  const todayName = DAYS[todayIdx];
+  const wk = weekKey(0);
+  const plan = state.weekPlan[wk] || {};
+  const bplan = state.weekBreakfast[wk] || {};
+  const lplan = state.weekLunch[wk] || {};
+
+  const mealLine = (raw, list, type) => {
+    const ref = raw ? planRef(raw) : null;
+    if (ref && ref.custom) return `<span style="font-style:italic">${h(ref.text)}</span>`;
+    const item = ref ? list.find(x => x.id === ref.id) : null;
+    if (item) return `<span style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px" onclick="openDetail('${item.id}','${type}')">${h(item.name)}</span>${ref.scale!==1?` <span style="color:#7C6FF0;font-weight:700;font-size:11px">${ref.scale}×</span>`:''}`;
+    return null;
+  };
+
+  const breakfastLine = mealLine(bplan[todayName], state.breakfasts, "breakfast")
+    || `<button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="state.weekOffset=0;openBreakfastPicker('${todayName}')">+ Aggiungi</button>`;
+  const dinnerLine = mealLine(plan[todayName], state.recipes, "recipe")
+    || `<button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="state.weekOffset=0;openPicker('${todayName}')">+ Aggiungi</button>`;
+
+  const prevRaw = todayIdx > 0 ? plan[DAYS[todayIdx-1]] : null;
+  const prevRef = prevRaw ? planRef(prevRaw) : null;
+  const prevDinner = prevRef && !prevRef.custom ? state.recipes.find(r => r.id === prevRef.id) : null;
+  const prevName = prevRef && prevRef.custom ? prevRef.text : (prevDinner ? prevDinner.name : null);
+  const lunchCustom = lplan[todayName];
+  const lunchLine = lunchCustom ? h(lunchCustom)
+    : prevName ? `<span style="color:#888;font-style:italic">Avanzi: ${h(prevName)}</span>`
+    : `<span style="color:#ccc">—</span>`;
+
+  // Promemoria 🌙: colazione di domani da preparare stasera (gestisce anche il cambio settimana)
+  const tomorrowRaw = todayIdx < 6 ? bplan[DAYS[todayIdx+1]] : (state.weekBreakfast[weekKey(1)] || {})[DAYS[0]];
+  const tomorrowRef = tomorrowRaw ? planRef(tomorrowRaw) : null;
+  const tomorrowB = tomorrowRef && !tomorrowRef.custom ? state.breakfasts.find(b => b.id === tomorrowRef.id) : null;
+  const prepNotice = tomorrowB && tomorrowB.prepAhead
+    ? noticeEl("warning", `🌙 Stasera prepara: <strong>${h(tomorrowB.name)}</strong> (colazione di domani)`) : "";
+
+  const mealsCard = `<div class="card mb16">
+    <div class="day-row"><span class="day-label">Colazione</span><div style="flex:1;font-size:13px">${breakfastLine}</div></div>
+    <div class="day-row"><span class="day-label">Pranzo</span><div style="flex:1;font-size:13px">${lunchLine}</div></div>
+    <div class="day-row"><span class="day-label">Cena</span><div style="flex:1;font-size:13px">${dinnerLine}</div></div>
+  </div>`;
+
+  const expiring = expiringItems();
+  const expCard = expiring.length ? noticeEl("warning",
+    `⏰ <strong>In scadenza:</strong> ${expiring.slice(0,5).map(p=>`${h(p.name)} (${expLabel(p.exp)})`).join(" · ")}${expiring.length>5?` e altri ${expiring.length-5}`:""}<br><span style="cursor:pointer;text-decoration:underline;font-weight:600" onclick="switchTab('dispensa')">Vai in Dispensa →</span>`
+  ) : "";
+
+  const todo = state.shopping.filter(i => !i.checked).length;
+  const total = state.shopping.length;
+  const shopCard = total === 0
+    ? noticeEl("info", `Nessuna lista della spesa generata. <span style="cursor:pointer;text-decoration:underline;font-weight:600" onclick="switchTab('spesa')">Vai in Spesa →</span>`)
+    : todo === 0
+    ? noticeEl("success", `✓ Spesa completata (${total} articoli)`)
+    : noticeEl("info", `🛒 <strong>${todo}</strong> di ${total} articoli ancora da comprare. <span style="cursor:pointer;text-decoration:underline;font-weight:600" onclick="switchTab('spesa')">Apri la lista →</span>`);
+
+  const dateObj = getWeekDates(0)[todayIdx];
+  const MONTHS_LONG = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
+  const dateLabel = `${todayName} ${dateObj.getDate()} ${MONTHS_LONG[dateObj.getMonth()]}`;
+
+  return `<div style="font-size:13px;color:#999;margin-bottom:2px">${dateLabel}</div>
+    <h2 style="font-size:19px;font-weight:700;margin-bottom:14px">Cosa mangiamo oggi?</h2>
+    ${prepNotice}
+    ${mealsCard}
+    ${expCard}
+    ${shopCard}`;
+}
+
+// Tab "Ricette": toggle Cene/Colazioni, poi delega alla vista corrispondente
+function renderRicette() {
+  const toggle = `<div class="segmented">
+    <button class="${state.mealView==='cene'?'active':''}" onclick="setMealView('cene')">🍽️ Cene</button>
+    <button class="${state.mealView==='colazioni'?'active':''}" onclick="setMealView('colazioni')">☀️ Colazioni</button>
+  </div>`;
+  return toggle + (state.mealView === "colazioni" ? renderColazioni() : renderPaniere());
+}
+function setMealView(v) {
+  state.mealView = v; state.tagFilter = "tutti"; state.bFilter = "tutte"; state.searchQuery = "";
+  render();
 }
 
 function renderPaniere() {
@@ -719,13 +949,59 @@ function planEntryHtml(raw, day, isBreakfast) {
     return row(`<div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
           <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customName(raw))}</span>`);
   }
-  const item = raw ? (isBreakfast ? state.breakfasts.find(b => b.id === raw) : state.recipes.find(r => r.id === raw)) : null;
+  const ref = planRef(raw);
+  const item = ref ? (isBreakfast ? state.breakfasts.find(b => b.id === ref.id) : state.recipes.find(r => r.id === ref.id)) : null;
   if (!item) return `<button class="btn btn-outline" onclick="${isBreakfast?'openBreakfastPicker':'openPicker'}('${day}')">+ Aggiungi</button>`;
   const dot = isBreakfast
     ? `<div style="width:8px;height:8px;border-radius:50%;background:${item.prepAhead?'#7C6FF0':'#E07C3B'};flex-shrink:0"></div>`
     : dotEl(item.tag);
+  const scaled = ref.scale !== 1;
+  const scaleBtn = `<button style="font-size:10px;font-weight:700;color:${scaled?'#7C6FF0':'#bbb'};background:${scaled?'#EEEEFF':'transparent'};border:1px solid ${scaled?'transparent':'#eee'};border-radius:8px;padding:2px 6px;flex-shrink:0;cursor:pointer" title="Scala porzioni per questo pasto" onclick="event.stopPropagation();cycleMealScale('${day}',${isBreakfast})">${ref.scale}×</button>`;
   return row(`${dot}
-          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${item.id}','${isBreakfast?'breakfast':'recipe'}')">${h(item.name)}</span>`);
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${item.id}','${isBreakfast?'breakfast':'recipe'}')">${h(item.name)}</span>
+          ${scaleBtn}`);
+}
+
+// Riga del Pranzo: automatico (avanzi della cena precedente) o nota custom modificabile
+function lunchEntryHtml(day, prevName) {
+  const custom = currentLunchPlan()[day] || null;
+  if (state.editLunchDay === day) {
+    return `<div style="display:flex;gap:6px;flex:1;min-width:0" onclick="event.stopPropagation()">
+      <input class="input" id="lunch-input" value="${h(custom||'')}" placeholder="Es. Pizza, mensa, avanzi di ieri..." autofocus style="flex:1;font-size:13px;padding:6px 8px" onkeydown="if(event.key==='Enter'){setLunchOverride('${ja(day)}',this.value)}">
+      <button class="btn btn-primary" style="padding:6px 10px;font-size:12px" onclick="setLunchOverride('${ja(day)}',document.getElementById('lunch-input').value)">✓</button>
+      <button class="btn btn-ghost" style="padding:6px 4px;font-size:16px;color:#bbb" onclick="state.editLunchDay=null;render()">×</button>
+    </div>`;
+  }
+  const label = custom ? h(custom) : (prevName ? `Avanzi: ${h(prevName)}` : "—");
+  const labelStyle = custom ? "color:#111" : (prevName ? "color:#888;font-style:italic" : "color:#ddd");
+  return `<div style="flex:1;display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer" onclick="state.editLunchDay='${ja(day)}';render()">
+    <span style="font-size:12px;${labelStyle};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${label}</span>
+    ${custom ? `<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;line-height:1;flex-shrink:0" title="Torna all'automatico" onclick="event.stopPropagation();clearLunchOverride('${ja(day)}')">↺</button>` : ""}
+  </div>`;
+}
+function setLunchOverride(day, val) {
+  val = String(val || "").trim();
+  const lp = currentLunchPlan();
+  if (val) lp[day] = val; else delete lp[day];
+  state.editLunchDay = null;
+  save("wl", state.weekLunch);
+  render();
+}
+function clearLunchOverride(day) {
+  delete currentLunchPlan()[day];
+  save("wl", state.weekLunch);
+  render();
+}
+
+function cycleMealScale(day, isBreakfast) {
+  const planObj = isBreakfast ? currentBPlan() : currentPlan();
+  const ref = planRef(planObj[day]);
+  if (!ref || ref.custom) return;
+  const order = [0.5, 1, 2];
+  const next = order[(order.indexOf(ref.scale) + 1) % order.length];
+  planObj[day] = planRawFor(ref.id, next);
+  save(isBreakfast ? "wb" : "w", isBreakfast ? state.weekBreakfast : state.weekPlan);
+  render();
 }
 
 function renderSettimana() {
@@ -736,25 +1012,28 @@ function renderSettimana() {
   const MONTHS = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
   const days = DAYS.map((day, i) => {
     const prevRaw = i > 0 ? (plan[DAYS[i-1]] || null) : null;
-    const prev = prevRaw && !isCustomEntry(prevRaw) ? state.recipes.find(r => r.id === prevRaw) : null;
-    const prevName = prevRaw && isCustomEntry(prevRaw) ? customName(prevRaw) : (prev ? prev.name : null);
+    const prevRef = prevRaw ? planRef(prevRaw) : null;
+    const prev = prevRef && !prevRef.custom ? state.recipes.find(r => r.id === prevRef.id) : null;
+    const prevName = prevRef && prevRef.custom ? prevRef.text : (prev ? prev.name : null);
 
     // Se la colazione di DOMANI richiede prep serale, mostra promemoria su OGGI
-    const tomorrowBreakfastId = i < DAYS.length - 1 ? bplan[DAYS[i+1]] : null;
-    const tomorrowBreakfast = tomorrowBreakfastId && !isCustomEntry(tomorrowBreakfastId) ? state.breakfasts.find(b => b.id === tomorrowBreakfastId) : null;
+    const tomorrowRaw = i < DAYS.length - 1 ? bplan[DAYS[i+1]] : null;
+    const tomorrowRef = tomorrowRaw ? planRef(tomorrowRaw) : null;
+    const tomorrowBreakfast = tomorrowRef && !tomorrowRef.custom ? state.breakfasts.find(b => b.id === tomorrowRef.id) : null;
     const prepReminder = tomorrowBreakfast && tomorrowBreakfast.prepAhead
       ? `<span title="Prepara stanotte la colazione di ${DAYS[i+1]}" style="margin-left:auto;font-size:13px;cursor:default">🌙</span>`
       : "";
 
     const breakfastHtml = planEntryHtml(bplan[day] || null, day, true);
     const dinnerRaw = plan[day] || null;
+    const dinnerRef = dinnerRaw ? planRef(dinnerRaw) : null;
     const dinnerHtml = planEntryHtml(dinnerRaw, day, false);
-    const hasDinner = !!dinnerRaw && (isCustomEntry(dinnerRaw) || state.recipes.some(r => r.id === dinnerRaw));
+    const hasDinner = !!dinnerRef && (dinnerRef.custom || state.recipes.some(r => r.id === dinnerRef.id));
 
     const dateObj = weekDates[i];
     const dateStr = `${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]}`;
     const isToday = dateObj.toDateString() === new Date().toDateString();
-    const usatoBtn = hasDinner ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
+    const usatoBtn = hasDinner && !dinnerRef.custom ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
     return `<div class="day-card">
       <div class="day-header">
         <div>
@@ -769,7 +1048,7 @@ function renderSettimana() {
       </div>
       <div class="day-row">
         <span class="day-label">Pranzo</span>
-        ${prevName ? `<span style="font-size:12px;color:#888;font-style:italic">Avanzi: ${h(prevName)}</span>` : `<span style="font-size:12px;color:#ddd">—</span>`}
+        ${lunchEntryHtml(day, prevName)}
       </div>
       <div class="day-row">
         <span class="day-label">Cena</span>
@@ -874,7 +1153,7 @@ function renderDispensa() {
         <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;margin-left:4px" onclick="removePantry('${item.id}')">×</button>
       </div>${expEditor}`;
     };
-    const catSections = SHOP_CATS.filter(c => byCat[c.id] && c.id !== "varie").map(c => {
+    const catSections = orderedShopCats().filter(c => byCat[c.id]).map(c => {
       const open = !!state.openPantryCats[c.id];
       const rows = open ? byCat[c.id].map(makePantryRow).join("") : "";
       return `<div class="cat-hdr" style="cursor:pointer" onclick="togglePantryCat('${c.id}')">
@@ -882,14 +1161,7 @@ function renderDispensa() {
         <span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span>
       </div>${rows}`;
     }).join("");
-    const varieItems = byCat["varie"] || [];
-    const varieOpen = !!state.openPantryCats["varie"];
-    const varieSection = varieItems.length > 0 ? `<div class="cat-hdr" style="cursor:pointer" onclick="togglePantryCat('varie')">
-      <span>${varieOpen?'▾':'▸'} 🗂 Varie</span>
-      <span style="font-weight:400;color:#aaa">${varieItems.length}</span>
-    </div>${varieOpen ? varieItems.map(makePantryRow).join("") : ""}` : "";
-    const uncatRows = "";
-    itemsHtml = `<div class="card">${varieSection}${catSections}</div>
+    itemsHtml = `<div class="card">${catSections}</div>
       <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} element${state.pantry.length===1?"o":"i"} in dispensa</p>`;
   }
 
@@ -1012,7 +1284,7 @@ function renderSpesa() {
       if (!byCat[cat]) byCat[cat] = [];
       byCat[cat].push(item);
     }
-    const catSections = SHOP_CATS.filter(c => byCat[c.id]).map(c =>
+    const catSections = orderedShopCats().filter(c => byCat[c.id]).map(c =>
       `<div class="cat-hdr"><span>${c.label}</span><span style="font-weight:400;color:#aaa">${byCat[c.id].length}</span></div>${byCat[c.id].map(makeItem).join("")}`
     ).join("");
     todoSect = `<div class="card mb12">${catSections}</div>`;
@@ -1137,7 +1409,7 @@ function renderImportCSV() {
 // RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════
 function render() {
-  renderTabs();
+  renderBottomNav();
   const el = document.getElementById("content");
   if (state.view === "detail") { el.innerHTML = renderDetail(); return; }
   if (state.view === "picker") { el.innerHTML = renderPicker(); return; }
@@ -1147,8 +1419,8 @@ function render() {
   if (state.view === "editBreakfast") { el.innerHTML = renderMealForm(true, true); return; }
   if (state.view === "addBreakfast") { el.innerHTML = renderMealForm(true, false); return; }
   if (state.view === "importCSV") { el.innerHTML = renderImportCSV(); return; }
-  if (state.tab === "paniere") el.innerHTML = renderPaniere();
-  else if (state.tab === "colazioni") el.innerHTML = renderColazioni();
+  if (state.tab === "oggi") el.innerHTML = renderOggi();
+  else if (state.tab === "ricette") el.innerHTML = renderRicette();
   else if (state.tab === "settimana") el.innerHTML = renderSettimana();
   else if (state.tab === "dispensa") el.innerHTML = renderDispensa();
   else if (state.tab === "spesa") el.innerHTML = renderSpesa();
@@ -1158,7 +1430,8 @@ function render() {
 function renderImpostazioni() {
   const customMap = getCustomCatMap();
   const merged = getMergedCatMap();
-  const catOpts = SHOP_CATS.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
+  const orderedCats = orderedShopCats();
+  const catOpts = orderedCats.map(c => `<option value="${c.id}">${c.label}</option>`).join("");
 
   // Tutti gli ingredienti noti + quelli in dispensa non ancora mappati
   const allNames = Object.assign({}, merged);
@@ -1167,8 +1440,14 @@ function renderImpostazioni() {
     if (!(k in allNames)) allNames[k] = categorizeItem(k);
   }
   const q = state.catSearch.trim().toLowerCase();
+  // Le frecce di riordino spostano rispetto alla categoria "vicina visibile" successiva/precedente
+  // (ignorando quelle senza alcun ingrediente), non alla posizione grezza: altrimenti cliccare
+  // non produrrebbe alcun cambiamento visibile se il vicino nell'ordine risultasse vuoto.
+  // Mostrate solo a filtri disattivati, per non riordinare in base a una vista parziale.
+  const canReorder = !q && state.catFilter === "tutte";
+  const visibleCatIds = orderedCats.filter(c => Object.keys(allNames).some(n => allNames[n] === c.id)).map(c => c.id);
 
-  const sections = SHOP_CATS.map(cat => {
+  const sections = orderedCats.map((cat) => {
     let entries = Object.keys(allNames).filter(n => allNames[n] === cat.id);
     if (state.catFilter === "scorta") entries = entries.filter(n => state.desired[n] && state.desired[n].q > 0);
     if (q) entries = entries.filter(n => n.includes(q));
@@ -1190,12 +1469,19 @@ function renderImpostazioni() {
       return `<div class="cat-row" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid #f5f5f5;flex-wrap:wrap">
         <span style="flex:1;min-width:110px;font-size:13px;color:${isCustom?'#1E4D8C':'#111'}">${h(name)}${isCustom?'<span style="font-size:10px;color:#3A6EA5;margin-left:4px">★</span>':''}${low?' <span style="color:#B45309" title="Sotto scorta">▼</span>':''}</span>
         ${qtyCtl}
-        <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${ja(name)}',this.value)">${SHOP_CATS.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
+        <select style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;font-family:inherit" onchange="moveCatItem('${ja(name)}',this.value)">${orderedCats.map(c=>`<option value="${c.id}"${c.id===cat.id?' selected':''}>${c.label.split(' ').slice(1).join(' ')}</option>`).join('')}</select>
         ${customMap[name]?`<button style="background:none;border:none;color:#ccc;cursor:pointer;font-size:16px" onclick="resetCatItem('${ja(name)}')">×</button>`:'<span style="width:20px"></span>'}
       </div>`;
     }).join("");
+    let reorderBtns = "";
+    if (canReorder) {
+      const vIdx = visibleCatIds.indexOf(cat.id);
+      const upBtn = vIdx > 0 ? `<button style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 4px" title="Sposta su" onclick="moveCatOrder('${cat.id}','${visibleCatIds[vIdx-1]}')">▲</button>` : `<span style="width:19px"></span>`;
+      const downBtn = vIdx < visibleCatIds.length - 1 ? `<button style="background:none;border:none;color:#aaa;cursor:pointer;font-size:13px;padding:2px 4px" title="Sposta giù" onclick="moveCatOrder('${cat.id}','${visibleCatIds[vIdx+1]}')">▼</button>` : `<span style="width:19px"></span>`;
+      reorderBtns = upBtn + downBtn;
+    }
     return `<div class="card mb12">
-      <div class="cat-hdr"><span>${cat.label}</span><span style="font-weight:400;color:#aaa">${entries.length}</span></div>
+      <div class="cat-hdr"><span>${cat.label}</span><span style="display:flex;align-items:center;gap:6px"><span style="font-weight:400;color:#aaa">${entries.length}</span>${reorderBtns}</span></div>
       ${rows}
     </div>`;
   }).join("");
@@ -1235,7 +1521,7 @@ function renderImpostazioni() {
   return `${syncCard}
     ${expiryCard}
     <div style="font-size:14px;font-weight:700;margin-bottom:6px">🗂 Ingredienti: categorie e scorte</div>
-    ${noticeEl("info","Ogni ingrediente ha la sua <strong>categoria</strong> (dove appare in Dispensa e Spesa) e una <strong>scorta desiderata</strong> (📦): se ne hai meno in dispensa, la differenza entra in lista spesa con l'etichetta <span style=\"color:#7C6FF0;font-weight:600\">scorta</span>. La scorta parte dalla quantità che hai ora; ▼ = sotto scorta; ★ = personalizzazione tua.")}
+    ${noticeEl("info","Ogni ingrediente ha la sua <strong>categoria</strong> (dove appare in Dispensa e Spesa) e una <strong>scorta desiderata</strong> (📦): se ne hai meno in dispensa, la differenza entra in lista spesa con l'etichetta <span style=\"color:#7C6FF0;font-weight:600\">scorta</span>. La scorta parte dalla quantità che hai ora; nelle righe ▼ = sotto scorta, ★ = personalizzazione tua. Usa le frecce ▲▼ sull'intestazione per riordinare le categorie: seguono lo stesso ordine in Dispensa e Spesa, utile per rispecchiare il percorso al supermercato.")}
     <div class="card mb16" style="padding:12px">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">Aggiungi regola</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1245,7 +1531,7 @@ function renderImpostazioni() {
       </div>
     </div>
     ${catTools}
-    ${Object.keys(customMap).length > 0 ? `<button class="btn btn-outline mb12" onclick="if(confirm('Ripristinare tutte le regole predefinite?')){setCustomCatMap({});render()}">↺ Ripristina default</button>` : ''}
+    ${Object.keys(customMap).length > 0 ? `<button class="btn btn-outline mb12" onclick="resetAllCatRules()">↺ Ripristina default</button>` : ''}
     ${sections || noticeEl("info","Nessun ingrediente corrisponde ai filtri.")}`;
 }
 
@@ -1288,31 +1574,63 @@ function assignDinner(rid) { currentPlan()[state.pickingFor]=rid; save("w",state
 function removeBreakfast(day) { delete currentBPlan()[day]; save("wb",state.weekBreakfast); render(); }
 function assignBreakfast(bid) { currentBPlan()[state.pickingBreakfastFor]=bid; save("wb",state.weekBreakfast); state.view="list"; state.tab="settimana"; render(); }
 
+// Estrae gli id ricetta usati in una settimana (ignora voci custom e considera sia il formato
+// stringa che {id,scale})
+function recipeIdsIn(weekObj) {
+  const s = new Set();
+  if (weekObj) for (const v of Object.values(weekObj)) { const ref = planRef(v); if (ref && !ref.custom) s.add(ref.id); }
+  return s;
+}
 function autoFillWeek() {
   const plan = currentPlan();
   const empty = DAYS.filter(d => !plan[d]);
   if (!empty.length) return;
   const season = seasonForDate(getWeekDates(state.weekOffset)[0]);
-  const used = new Set(Object.values(plan));
-  let pool = state.recipes.filter(r => r.tag === season && !used.has(r.id));
-  if (pool.length < empty.length) pool = pool.concat(state.recipes.filter(r => r.tag !== season && !used.has(r.id)));
+
+  const used = recipeIdsIn(plan);
+  // Evita di riproporre ricette già cucinate in questa settimana o nelle due precedenti
+  const recent = new Set(used);
+  for (const off of [state.weekOffset - 1, state.weekOffset - 2]) {
+    for (const id of recipeIdsIn(state.weekPlan[weekKey(off)])) recent.add(id);
+  }
+
+  // Priorità a ricette che usano ingredienti in scadenza in dispensa
+  const expiringNames = expiringItems().map(p => p.name.toLowerCase().trim());
+  const expiryScore = r => expiringNames.filter(name =>
+    r.ing.some(i => { const n = i.n.toLowerCase().trim(); return containsWord(name, n) || containsWord(n, name); })
+  ).length;
+
+  let pool = state.recipes.filter(r => !used.has(r.id));
   if (!pool.length) return;
-  pool = pool.slice().sort(() => Math.random() - 0.5);
-  empty.forEach((d, i) => { plan[d] = pool[i % pool.length].id; });
+  // Punteggio: stagione corretta (peso alto) + non cucinata di recente + ingredienti in scadenza,
+  // con un piccolo margine casuale per non proporre sempre lo stesso ordine
+  pool = pool
+    .map(r => ({r, score: (r.tag === season ? 10 : 0) + (recent.has(r.id) ? 0 : 4) + expiryScore(r) * 3 + Math.random()}))
+    .sort((a, b) => b.score - a.score)
+    .map(x => x.r);
+
+  const assigned = new Set();
+  empty.forEach((d, i) => {
+    const pick = pool.find(r => !assigned.has(r.id)) || pool[i % pool.length];
+    if (!pick) return;
+    assigned.add(pick.id);
+    plan[d] = pick.id;
+  });
   save("w", state.weekPlan);
   render();
 }
 
 function shareShopping() {
   const items = state.shopping.filter(i => !i.checked);
-  if (!items.length) { alert("La lista è vuota."); return; }
+  if (!items.length) { toast("La lista è vuota."); return; }
   const text = "🛒 Lista della spesa\n" + items.map(i =>
     i.amount > 0 && i.unit && i.unit !== "qb" ? `• ${i.name} — ${i.amount} ${i.unit}` : `• ${i.name}`).join("\n");
   if (navigator.share) navigator.share({text}).catch(()=>{});
-  else navigator.clipboard.writeText(text).then(()=>alert("Lista copiata negli appunti")).catch(()=>{});
+  else navigator.clipboard.writeText(text).then(()=>toast("Lista copiata negli appunti")).catch(()=>{});
 }
 
 async function refreshShopping() {
+  if (hasPendingSave("s")) return; // salvataggio locale in volo: non sovrascriverlo con un fetch superato
   const val = await sGet(SK.s);
   if (val !== null) {
     applyVal("s", val);
@@ -1359,7 +1677,21 @@ function addPantry() {
 }
 function removePantry(id) { state.pantry=state.pantry.filter(p=>p.id!==id); save("p",state.pantry); render(); }
 
-function doGenerate() { state.shopping=generateShoppingList(); save("s",state.shopping); render(); }
+// Rigenera le sole voci auto-generate (manual:false), preservando le voci manuali e lo stato
+// "comprato" delle voci che restano necessarie — non butta via nulla che l'utente ha già spuntato o aggiunto a mano.
+function doGenerate() {
+  const fresh = generateShoppingList();
+  const prevAuto = new Map();
+  for (const i of state.shopping) if (!i.manual) prevAuto.set(i.name.toLowerCase().trim() + "::" + i.unit, i);
+  const merged = fresh.map(item => {
+    const prev = prevAuto.get(item.name.toLowerCase().trim() + "::" + item.unit);
+    return prev ? {...item, id: prev.id, checked: prev.checked} : item;
+  });
+  const manual = state.shopping.filter(i => i.manual);
+  state.shopping = merged.concat(manual);
+  save("s", state.shopping);
+  render();
+}
 function toggleCheck(id) { state.shopping=state.shopping.map(i=>i.id===id?{...i,checked:!i.checked}:i); save("s",state.shopping); render(); }
 function removeShopItem(id) { state.shopping=state.shopping.filter(i=>i.id!==id); save("s",state.shopping); render(); }
 function addShopItem() {
@@ -1407,11 +1739,11 @@ function confirmDelete(id) {
   const isB = state.detailType === "breakfast";
   if (isB) {
     state.breakfasts=state.breakfasts.filter(b=>b.id!==id);
-    for (const week of Object.values(state.weekBreakfast)) Object.keys(week).forEach(d=>{if(week[d]===id)delete week[d];});
+    for (const week of Object.values(state.weekBreakfast)) Object.keys(week).forEach(d=>{if(planRef(week[d])?.id===id)delete week[d];});
     save("b",state.breakfasts); save("wb",state.weekBreakfast);
   } else {
     state.recipes=state.recipes.filter(r=>r.id!==id);
-    for (const week of Object.values(state.weekPlan)) Object.keys(week).forEach(d=>{if(week[d]===id)delete week[d];});
+    for (const week of Object.values(state.weekPlan)) Object.keys(week).forEach(d=>{if(planRef(week[d])?.id===id)delete week[d];});
     save("r",state.recipes); save("w",state.weekPlan);
   }
   state.deleteConfirm=null; state.view="list"; render();
@@ -1464,7 +1796,7 @@ function previewCSV(text) {
 }
 function importParsed() {
   const el=document.getElementById("csv-preview"); if(!el||!el._parsed)return;
-  state.recipes.push(...el._parsed); save("r",state.recipes); state.view="list"; state.tab="paniere"; render();
+  state.recipes.push(...el._parsed); save("r",state.recipes); state.view="list"; state.tab="ricette"; state.mealView="cene"; render();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1473,47 +1805,56 @@ function importParsed() {
 function markConsumed(day) {
   const raw = currentPlan()[day];
   if (!raw || isCustomEntry(raw)) return;
-  const recipe = state.recipes.find(r => r.id === raw);
+  const ref = planRef(raw);
+  const recipe = state.recipes.find(r => r.id === ref.id);
   if (!recipe) return;
-  if (!confirm(`Scalare gli ingredienti di "${recipe.name}" dalla dispensa?`)) return;
+  const scale = ref.scale;
   // Match per nome esatto o prefisso ("riso" ↔ "riso integrale"),
   // ma non per parola interna ("limone" non tocca "succo di limone")
   const matches = (pn, n) => pn === n || pn.startsWith(n + " ") || n.startsWith(pn + " ");
+  const prevPantry = state.pantry;
   const remaining = [];
-  for (const p of state.pantry) {
+  for (const p of prevPantry) {
     const pn = p.name.toLowerCase().trim();
     const ing = recipe.ing.find(i => matches(pn, i.n.toLowerCase().trim()));
     if (!ing) { remaining.push(p); continue; }
-    const used = ing.a > 0 ? toBase(ing.a, ing.u) : null;
+    const used = ing.a > 0 ? toBase(ing.a * scale, ing.u) : null;
     if (!used) { remaining.push(p); continue; } // "qb": non consuma la scorta
     const have = p.qty != null ? toBase(p.qty, p.unit) : null;
     if (have && have.d === used.d && have.v > used.v) {
-      // Quantità note e confrontabili: scala solo il consumato
-      p.qty = Math.round(((have.v - used.v) / toBase(1, p.unit).v) * 100) / 100;
-      remaining.push(p);
+      // Quantità note e confrontabili: scala solo il consumato (senza mutare l'originale, serve per l'annulla)
+      remaining.push({...p, qty: Math.round(((have.v - used.v) / toBase(1, p.unit).v) * 100) / 100});
     }
     // Altrimenti (quantità ignota o consumata del tutto): rimuovi l'articolo
   }
   state.pantry = remaining;
   save("p", state.pantry);
   render();
+  toast(`Ingredienti di "${recipe.name}" scalati dalla dispensa`, {
+    actionLabel: "Annulla",
+    onAction: () => { state.pantry = prevPantry; save("p", state.pantry); render(); }
+  });
 }
 
 function copyPantry() {
-  if (state.pantry.length === 0) { alert("La dispensa è vuota."); return; }
+  if (state.pantry.length === 0) { toast("La dispensa è vuota."); return; }
   const text = state.pantry.map(p => p.qty ? `${p.name} - ${p.qty}${p.unit?' '+p.unit:''}` : p.name).join("\n");
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.querySelector('[onclick="copyPantry()"]');
     if (btn) { btn.textContent = "✓ Copiata!"; setTimeout(() => { btn.textContent = "📋 Copia dispensa"; }, 2000); }
-  }).catch(() => alert("Errore copia"));
+  }).catch(() => toast("Errore durante la copia"));
 }
 
 function clearPantry() {
   if (state.pantry.length === 0) return;
-  if (!confirm(`Svuotare la dispensa (${state.pantry.length} elementi)?`)) return;
+  const prevPantry = state.pantry;
   state.pantry = [];
   save("p", state.pantry);
   render();
+  toast(`Dispensa svuotata (${prevPantry.length} element${prevPantry.length===1?'o':'i'})`, {
+    actionLabel: "Annulla",
+    onAction: () => { state.pantry = prevPantry; save("p", state.pantry); render(); }
+  });
 }
 
 function togglePantryCat(catId) {
@@ -1592,10 +1933,15 @@ function saveToken() {
 }
 
 function clearToken() {
-  if (!confirm("Disattivare la sincronizzazione su questo dispositivo? I dati locali restano.")) return;
+  const prevToken = getToken();
+  if (!prevToken) return;
   try { localStorage.removeItem("cm:token"); } catch {}
   updateSyncBadge("⚙️ Configura sincronizzazione");
   render();
+  toast("Sincronizzazione disattivata su questo dispositivo", {
+    actionLabel: "Annulla",
+    onAction: () => { try { localStorage.setItem("cm:token", prevToken); } catch {} updateSyncBadge(null); render(); loadRemote().then(()=>render()).catch(()=>{}); }
+  });
 }
 
 // Importa in dispensa righe nel formato "nome - quantità unità" (output del prompt scontrino)
@@ -1625,12 +1971,12 @@ function importReceiptText(text) {
   save("d", state.desired);
   state.showReceiptModal = false;
   render();
-  alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
+  toast(`Importati: ${added} nuovi, ${updated} aggiornati.`);
 }
 
 function importPastedReceipt() {
   const ta = document.getElementById("receipt-paste");
-  if (!ta || !ta.value.trim()) { alert("Incolla prima il testo nell'area di testo."); return; }
+  if (!ta || !ta.value.trim()) { toast("Incolla prima il testo nell'area di testo."); return; }
   importReceiptText(ta.value);
 }
 
@@ -1642,7 +1988,7 @@ function copyReceiptPrompt() {
   navigator.clipboard.writeText(receiptPrompt()).then(() => {
     const btn = document.querySelector('[onclick="copyReceiptPrompt()"]');
     if (btn) { btn.textContent = "✓ Copiato!"; setTimeout(() => { btn.textContent = "📋 Copia prompt"; }, 2000); }
-  }).catch(() => alert("Copia manuale: seleziona il testo nel riquadro grigio"));
+  }).catch(() => toast("Copia manuale: seleziona il testo nel riquadro grigio"));
 }
 
 function handlePantryTxt(input) {
@@ -1656,10 +2002,15 @@ function handlePantryTxt(input) {
 }
 
 function removeCheckedItems() {
-  if (!confirm("Rimuovere tutti gli articoli già comprati?")) return;
+  const removed = state.shopping.filter(i => i.checked);
+  if (!removed.length) return;
   state.shopping = state.shopping.filter(i => !i.checked);
   save("s", state.shopping);
   render();
+  toast(`${removed.length} articol${removed.length===1?'o rimosso':'i rimossi'}`, {
+    actionLabel: "Annulla",
+    onAction: () => { state.shopping = state.shopping.concat(removed); save("s", state.shopping); render(); }
+  });
 }
 
 function selectShopIng(name) {
@@ -1700,6 +2051,17 @@ function resetCatItem(name) {
   render();
 }
 
+function resetAllCatRules() {
+  const prevMap = getCustomCatMap();
+  if (!Object.keys(prevMap).length) return;
+  setCustomCatMap({});
+  render();
+  toast("Regole categorie ripristinate ai valori predefiniti", {
+    actionLabel: "Annulla",
+    onAction: () => { setCustomCatMap(prevMap); render(); }
+  });
+}
+
 // ═══════════════════════════════════════════════════════
 // AVVIO
 // ═══════════════════════════════════════════════════════
@@ -1708,9 +2070,21 @@ render();
 if (!getToken()) updateSyncBadge("⚙️ Configura sincronizzazione");
 loadRemote().then(()=>render()).catch(()=>{});
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+// Al ritorno in foreground: refresh immediato della spesa se è il tab attivo (per fare la spesa
+// in due sullo stesso momento), refresh completo di tutte le chiavi se si è stati via un po'
+// (un altro dispositivo potrebbe aver modificato ricette, dispensa, piano...).
+let _hiddenAt = 0;
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.tab === "spesa") refreshShopping();
+  if (document.hidden) { _hiddenAt = Date.now(); return; }
+  if (state.tab === "spesa") refreshShopping();
+  if (!_hiddenAt || Date.now() - _hiddenAt > 20000) refreshAllFromRemote();
 });
+// Mentre si è sul tab Spesa, controlla periodicamente eventuali modifiche di un altro
+// dispositivo (es. si fa la spesa insieme, ognuno con il telefono in mano).
+setInterval(() => {
+  if (state.tab === "spesa" && !document.hidden) refreshShopping();
+}, 15000);
 </script>
 </body>
 </html>
