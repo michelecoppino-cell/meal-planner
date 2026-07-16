@@ -25,6 +25,12 @@ self.addEventListener("fetch", e => {
         caches.open(CACHE).then(c => c.put(e.request, copy));
         return res;
       })
-      .catch(() => caches.match(e.request).then(r => r || caches.match("./index.html")))
+      .catch(() => caches.match(e.request).then(r => {
+        if (r) return r;
+        // Fallback a index.html solo per le navigazioni: un asset (icona, manifest)
+        // non deve mai ricevere HTML al suo posto
+        if (e.request.mode === "navigate") return caches.match("./index.html");
+        return Response.error();
+      }))
   );
 });

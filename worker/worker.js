@@ -80,14 +80,18 @@ export default {
     }
 
     if (url.pathname === "/set" && request.method === "POST") {
-      const { key, value } = await request.json();
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "bad request" }, 400); }
+      const { key, value } = body;
       if (!key) return json({ error: "missing key" }, 400);
       await env.KV.put(key, value);
       return json({ ok: true });
     }
 
     if (url.pathname === "/add-item" && request.method === "POST") {
-      const { name, amount, unit } = await request.json();
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "bad request" }, 400); }
+      const { name, amount, unit } = body;
       if (!name || !String(name).trim()) return json({ error: "missing name" }, 400);
       const item = await addShoppingItem(env, name, amount, unit);
       return json({ ok: true, item });

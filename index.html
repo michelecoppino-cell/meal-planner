@@ -234,26 +234,45 @@ const INGREDIENT_CAT = {
   "lievito":"varie","lievito per dolci":"varie","bicarbonato":"varie",
 };
 
+let _mergedCatMap = null;
 function getCustomCatMap() {
   try { return JSON.parse(localStorage.getItem('cm:catmap') || '{}'); } catch { return {}; }
 }
 function setCustomCatMap(map) {
   localStorage.setItem('cm:catmap', JSON.stringify(map));
+  _mergedCatMap = null;
 }
 function getMergedCatMap() {
-  return Object.assign({}, INGREDIENT_CAT, getCustomCatMap());
+  if (!_mergedCatMap) _mergedCatMap = Object.assign({}, INGREDIENT_CAT, getCustomCatMap());
+  return _mergedCatMap;
 }
 function getAllKnownIngredients() {
   return Object.keys(getMergedCatMap()).sort((a,b)=>a.localeCompare(b,"it"));
+}
+// Contiene needle come parola intera ("farina di ceci" contiene "ceci", "insalata" non contiene "sale")
+function containsWord(hay, needle) {
+  let idx = hay.indexOf(needle);
+  while (idx !== -1) {
+    const before = idx === 0 || " /(".includes(hay[idx - 1]);
+    const after = idx + needle.length === hay.length || " /),".includes(hay[idx + needle.length]);
+    if (before && after) return true;
+    idx = hay.indexOf(needle, idx + 1);
+  }
+  return false;
 }
 function categorizeItem(name) {
   const lower = name.toLowerCase().trim();
   const map = getMergedCatMap();
   if (map[lower]) return map[lower];
+  // Match per parola intera, preferendo la chiave più lunga (più specifica).
+  // In direzione inversa solo come prefisso: "ceci" → "ceci cotti", ma "mele" ↛ "aceto di mele".
+  let best = null;
   for (const [key, cat] of Object.entries(map)) {
-    if (lower.includes(key) || key.includes(lower)) return cat;
+    if (containsWord(lower, key) || key.startsWith(lower + " ")) {
+      if (!best || key.length > best.len) best = {len: key.length, cat};
+    }
   }
-  return "varie";
+  return best ? best.cat : "varie";
 }
 
 function getWeekDates(offset) {
@@ -418,17 +437,26 @@ async function loadRemote() {
   STORE_KEYS.forEach((k, i) => applyVal(k, vals[i]));
 }
 
-async function save(k, val) {
+// Coda per chiave: serializza le scritture verso il Worker, così un salvataggio
+// lento non può sovrascrivere in ritardo uno più recente.
+const _saveQueue = {};
+function save(k, val) {
   try { localStorage.setItem(SK[k], JSON.stringify(val)); } catch {}
   if (!getToken()) { updateSyncBadge("⚙️ Sync non attiva — tocca qui"); return; }
-  const ok = await sSet(SK[k], val);
-  updateSyncBadge(ok ? null : "⚠ Errore salvataggio");
+  const payload = JSON.stringify(val);
+  _saveQueue[k] = (_saveQueue[k] || Promise.resolve())
+    .then(() => sSet(SK[k], JSON.parse(payload)))
+    .then(ok => updateSyncBadge(ok ? null : "⚠ Errore salvataggio"));
 }
 
 // ═══════════════════════════════════════════════════════
 // UTILITÀ
 // ═══════════════════════════════════════════════════════
 function uid() { return Math.random().toString(36).slice(2,9); }
+// Voci del piano non legate a una ricetta (es. "Pizza", "Cena fuori")
+const CUSTOM_PREFIX = "__custom__:";
+function isCustomEntry(v) { return typeof v === "string" && v.startsWith(CUSTOM_PREFIX); }
+function customName(v) { return v.slice(CUSTOM_PREFIX.length); }
 function h(str) { return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 // Per valori interpolati dentro stringhe JS negli attributi onclick: prima escape JS, poi HTML
 function ja(str) { return h(String(str).replace(/\\/g,"\\\\").replace(/'/g,"\\'")); }
@@ -484,18 +512,21 @@ function desiredMissing(key) {
   const d = state.desired[key];
   if (!d || !(d.q > 0)) return null;
   const p = state.pantry.find(x => x.name.toLowerCase().trim() === key);
+  if (!p || p.qty == null) return {missing: d.q, unit: d.u, name: p ? p.name : key};
   const want = toBase(d.q, d.u);
-  const have = p && p.qty != null ? toBase(p.qty, p.unit) : null;
+  const have = toBase(p.qty, p.unit);
   if (want && have && want.d === have.d) {
     if (have.v >= want.v) return null;
     const perUnit = toBase(1, d.u).v;
-    return {missing: Math.round(((want.v - have.v) / perUnit) * 100) / 100, unit: d.u, name: p ? p.name : key};
+    return {missing: Math.round(((want.v - have.v) / perUnit) * 100) / 100, unit: d.u, name: p.name};
   }
-  if (p && p.qty != null) { // unità non confrontabili: confronto numerico diretto
+  // Stessa unità non convertibile (es. cucchiai): confronto numerico diretto
+  if ((p.unit || "").toLowerCase() === d.u.toLowerCase()) {
     if (p.qty >= d.q) return null;
     return {missing: Math.round((d.q - p.qty) * 100) / 100, unit: d.u, name: p.name};
   }
-  return {missing: d.q, unit: d.u, name: p ? p.name : key};
+  // Unità non confrontabili (es. 500 g in dispensa, scorta in pz): considera mancante l'intera scorta
+  return {missing: d.q, unit: d.u, name: p.name};
 }
 
 function updateSyncBadge(text) {
@@ -546,12 +577,12 @@ function generateShoppingList() {
   const bplan = state.weekBreakfast[weekKey(state.weekOffset)] || {};
   const meals = [];
   for (const v of Object.values(plan)) {
-    if (!v || v.startsWith("__custom__:")) continue;
+    if (!v || isCustomEntry(v)) continue;
     const r = state.recipes.find(x => x.id === v);
     if (r) meals.push(r);
   }
   for (const v of Object.values(bplan)) {
-    if (!v || v.startsWith("__custom__:")) continue;
+    if (!v || isCustomEntry(v)) continue;
     const b = state.breakfasts.find(x => x.id === v);
     if (b) meals.push(b);
   }
@@ -567,7 +598,7 @@ function generateShoppingList() {
   const out = [];
   for (const i of Object.values(agg)) {
     const p = pmap.get(i.name.toLowerCase().trim());
-    if (p) {
+    if (p && p.qty !== 0) { // qty 0 = esaurito: compra l'intera quantità
       // In dispensa: se la quantità è nota e confrontabile compra solo la differenza, altrimenti escludi
       const have = p.qty != null ? toBase(p.qty, p.unit) : null;
       const need = toBase(i.amount, i.unit);
@@ -584,7 +615,12 @@ function generateShoppingList() {
     const existing = out.find(i => i.name.toLowerCase().trim() === key);
     if (existing) {
       const a = toBase(existing.amount, existing.unit), b = toBase(r.missing, r.unit);
-      if (a && b && a.d === b.d && b.v > a.v) { existing.amount = r.missing; existing.unit = r.unit; existing.restock = true; }
+      if (a && b && a.d === b.d) {
+        if (b.v > a.v) { existing.amount = r.missing; existing.unit = r.unit; existing.restock = true; }
+      } else {
+        // Unità non confrontabili con la voce già in lista: aggiungi la scorta come riga separata
+        out.push({name: r.name, amount: r.missing, unit: r.unit, restock: true});
+      }
     } else {
       out.push({name: r.name, amount: r.missing, unit: r.unit, restock: true});
     }
@@ -613,14 +649,28 @@ function searchFiltered(recipes) {
   if (!q) return recipes;
   return recipes.filter(r => r.name.toLowerCase().includes(q) || r.ing.some(i => i.n.toLowerCase().includes(q)));
 }
+const SEASON_FILTERS = [["tutti","Tutte"],["primavera","🌱 Primavera"],["estate","☀️ Estate"],["autunno","🍂 Autunno"],["inverno","❄️ Inverno"]];
+const BREAKFAST_FILTERS = [["tutte","Tutte"],["mattina","☀️ Mattina"],["sera","🌙 Sera prima"]];
+function filterBarHtml(opts, active, handler) {
+  return `<div class="filter-bar">${opts.map(([k,l]) => `<button class="filter-btn ${active===k?'active':''}" onclick="${handler}('${k}')">${l}</button>`).join("")}</div>`;
+}
+function visibleRecipes() {
+  return searchFiltered(state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter));
+}
+function visibleBreakfasts() {
+  return state.bFilter === "tutte" ? state.breakfasts : state.breakfasts.filter(b => state.bFilter === "sera" ? b.prepAhead : !b.prepAhead);
+}
+// Colore/etichetta per colazioni: viola "sera prima", arancio "mattina"
+function bMeta(prepAhead) {
+  return prepAhead ? {col:"#7C6FF0", bg:"#EEEEFF", lbl:"🌙 Sera prima"} : {col:"#E07C3B", bg:"#FFF3EE", lbl:"☀️ Mattina"};
+}
 function searchBox() {
   return `<div style="margin-bottom:12px"><input class="input" id="recipe-search" value="${h(state.searchQuery)}" placeholder="\ud83d\udd0d Cerca per nome o ingrediente..." autocomplete="off" oninput="setSearch(this.value)"></div>`;
 }
 
 function renderPaniere() {
-  const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
-  const visible = searchFiltered(state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter));
-  const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
+  const visible = visibleRecipes();
+  const filters = filterBarHtml(SEASON_FILTERS, state.tagFilter, "setFilter");
   const grid = visible.length === 0 ? noticeEl("info","Nessuna ricetta trovata.") :
     `<div class="recipe-grid">${visible.map(r => `
       <div class="recipe-card" onclick="openDetail('${r.id}','recipe')">
@@ -632,7 +682,7 @@ function renderPaniere() {
           <div class="recipe-time">⏱ ${h(r.time)}</div>
         </div>
       </div>`).join("")}</div>`;
-  return `${searchBox()}<div class="filter-bar">${filters}</div>
+  return `${searchBox()}${filters}
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-outline" onclick="showView('addRecipe')">+ Aggiungi</button>
       <button class="btn btn-outline" onclick="showView('importCSV')">↑ Importa CSV</button>
@@ -640,13 +690,10 @@ function renderPaniere() {
 }
 
 function renderColazioni() {
-  const opts = [["tutte","Tutte"],["mattina","☀️ Mattina"],["sera","🌙 Sera prima"]];
-  const visible = state.bFilter==="tutte" ? state.breakfasts : state.bFilter==="sera" ? state.breakfasts.filter(b=>b.prepAhead) : state.breakfasts.filter(b=>!b.prepAhead);
-  const filters = opts.map(([k,l]) => `<button class="filter-btn ${state.bFilter===k?'active':''}" onclick="setBFilter('${k}')">${l}</button>`).join("");
+  const visible = visibleBreakfasts();
+  const filters = filterBarHtml(BREAKFAST_FILTERS, state.bFilter, "setBFilter");
   const cards = visible.map(b => {
-    const col = b.prepAhead ? "#7C6FF0" : "#E07C3B";
-    const bg = b.prepAhead ? "#EEEEFF" : "#FFF3EE";
-    const lbl = b.prepAhead ? "🌙 Sera prima" : "☀️ Mattina";
+    const {col, bg, lbl} = bMeta(b.prepAhead);
     return `<div class="b-card" onclick="openDetail('${b.id}','breakfast')">
       <div style="height:4px;background:${col}"></div>
       <div style="padding:12px">
@@ -659,9 +706,26 @@ function renderColazioni() {
     </div>`;
   }).join("");
   return `${noticeEl("info","Senza zuccheri aggiunti · avena, semi e frutta di stagione.")}
-    <div class="filter-bar">${filters}</div>
+    ${filters}
     <button class="btn btn-outline mb16" onclick="showView('addBreakfast')">+ Aggiungi</button>
     ${cards}`;
+}
+
+// Riga del piano (colazione o cena): pasto personalizzato, ricetta/colazione, o bottone "+ Aggiungi"
+function planEntryHtml(raw, day, isBreakfast) {
+  const xBtn = `<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="${isBreakfast?'removeBreakfast':'removeDinner'}('${day}')">×</button>`;
+  const row = inner => `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">${inner}${xBtn}</div>`;
+  if (raw && isCustomEntry(raw)) {
+    return row(`<div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customName(raw))}</span>`);
+  }
+  const item = raw ? (isBreakfast ? state.breakfasts.find(b => b.id === raw) : state.recipes.find(r => r.id === raw)) : null;
+  if (!item) return `<button class="btn btn-outline" onclick="${isBreakfast?'openBreakfastPicker':'openPicker'}('${day}')">+ Aggiungi</button>`;
+  const dot = isBreakfast
+    ? `<div style="width:8px;height:8px;border-radius:50%;background:${item.prepAhead?'#7C6FF0':'#E07C3B'};flex-shrink:0"></div>`
+    : dotEl(item.tag);
+  return row(`${dot}
+          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${item.id}','${isBreakfast?'breakfast':'recipe'}')">${h(item.name)}</span>`);
 }
 
 function renderSettimana() {
@@ -672,59 +736,25 @@ function renderSettimana() {
   const MONTHS = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
   const days = DAYS.map((day, i) => {
     const prevRaw = i > 0 ? (plan[DAYS[i-1]] || null) : null;
-    const prevIsCustom = prevRaw && prevRaw.startsWith("__custom__:");
-    const prev = prevRaw && !prevIsCustom ? state.recipes.find(r => r.id === prevRaw) : null;
-    const prevName = prevIsCustom ? prevRaw.slice(11) : (prev ? prev.name : null);
-    const breakfastRaw = bplan[day] || null;
-    const isCustomBreakfast = breakfastRaw && breakfastRaw.startsWith("__custom__:");
-    const breakfast = !isCustomBreakfast ? (breakfastRaw ? state.breakfasts.find(b => b.id === breakfastRaw) : null) : null;
-    const customBreakfastName = isCustomBreakfast ? breakfastRaw.slice(11) : null;
+    const prev = prevRaw && !isCustomEntry(prevRaw) ? state.recipes.find(r => r.id === prevRaw) : null;
+    const prevName = prevRaw && isCustomEntry(prevRaw) ? customName(prevRaw) : (prev ? prev.name : null);
 
     // Se la colazione di DOMANI richiede prep serale, mostra promemoria su OGGI
     const tomorrowBreakfastId = i < DAYS.length - 1 ? bplan[DAYS[i+1]] : null;
-    const tomorrowIsCustom = tomorrowBreakfastId && tomorrowBreakfastId.startsWith("__custom__:");
-    const tomorrowBreakfast = tomorrowBreakfastId && !tomorrowIsCustom ? state.breakfasts.find(b => b.id === tomorrowBreakfastId) : null;
+    const tomorrowBreakfast = tomorrowBreakfastId && !isCustomEntry(tomorrowBreakfastId) ? state.breakfasts.find(b => b.id === tomorrowBreakfastId) : null;
     const prepReminder = tomorrowBreakfast && tomorrowBreakfast.prepAhead
       ? `<span title="Prepara stanotte la colazione di ${DAYS[i+1]}" style="margin-left:auto;font-size:13px;cursor:default">🌙</span>`
       : "";
 
-    const bCol = breakfast ? (breakfast.prepAhead ? "#7C6FF0" : "#E07C3B") : "#bbb";
-    const breakfastHtml = isCustomBreakfast
-      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          <div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
-          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customBreakfastName)}</span>
-          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeBreakfast('${day}')">×</button>
-        </div>`
-      : breakfast
-      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          <div style="width:8px;height:8px;border-radius:50%;background:${bCol};flex-shrink:0"></div>
-          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${breakfast.id}','breakfast')">${h(breakfast.name)}</span>
-          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeBreakfast('${day}')">×</button>
-        </div>`
-      : `<button class="btn btn-outline" onclick="openBreakfastPicker('${day}')">+ Aggiungi</button>`;
-
+    const breakfastHtml = planEntryHtml(bplan[day] || null, day, true);
     const dinnerRaw = plan[day] || null;
-    const isCustomDinner = dinnerRaw && dinnerRaw.startsWith("__custom__:");
-    const dinner = !isCustomDinner ? (dinnerRaw ? state.recipes.find(r => r.id === dinnerRaw) : null) : null;
-    const customDinnerName = isCustomDinner ? dinnerRaw.slice(11) : null;
-    const dinnerHtml = isCustomDinner
-      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          <div style="width:8px;height:8px;border-radius:50%;background:#bbb;flex-shrink:0"></div>
-          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:italic">${h(customDinnerName)}</span>
-          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeDinner('${day}')">×</button>
-        </div>`
-      : dinner
-      ? `<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-          ${dotEl(dinner.tag)}
-          <span style="flex:1;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="openDetail('${dinner.id}','recipe')">${h(dinner.name)}</span>
-          <button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:20px;line-height:1;padding:0 2px" onclick="removeDinner('${day}')">×</button>
-        </div>`
-      : `<button class="btn btn-outline" onclick="openPicker('${day}')">+ Aggiungi</button>`;
+    const dinnerHtml = planEntryHtml(dinnerRaw, day, false);
+    const hasDinner = !!dinnerRaw && (isCustomEntry(dinnerRaw) || state.recipes.some(r => r.id === dinnerRaw));
 
     const dateObj = weekDates[i];
     const dateStr = `${dateObj.getDate()} ${MONTHS[dateObj.getMonth()]}`;
     const isToday = dateObj.toDateString() === new Date().toDateString();
-    const usatoBtn = (dinner || isCustomDinner) ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
+    const usatoBtn = hasDinner ? `<button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="markConsumed('${day}')">✓ Usato</button>` : "";
     return `<div class="day-card">
       <div class="day-header">
         <div>
@@ -760,9 +790,8 @@ function renderSettimana() {
 }
 
 function renderPicker() {
-  const tagOpts = [["tutti","Tutte"],["primavera","\ud83c\udf31 Primavera"],["estate","\u2600\ufe0f Estate"],["autunno","\ud83c\udf42 Autunno"],["inverno","\u2744\ufe0f Inverno"]];
-  const visible = searchFiltered(state.tagFilter === "tutti" ? state.recipes : state.recipes.filter(r => r.tag === state.tagFilter));
-  const filters = tagOpts.map(([k,l]) => `<button class="filter-btn ${state.tagFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join("");
+  const visible = visibleRecipes();
+  const filters = filterBarHtml(SEASON_FILTERS, state.tagFilter, "setFilter");
   const rows = visible.map(r => `
     <div style="padding:12px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;align-items:center;gap:12px" onclick="assignDinner('${r.id}')">
       ${dotEl(r.tag, 10)}
@@ -776,18 +805,15 @@ function renderPicker() {
       <input class="input" id="custom-dinner-input" placeholder="Scrivi un pasto personalizzato (es. Pizza, Cena fuori…)" style="flex:1">
       <button class="btn btn-primary" onclick="assignCustomDinner()">Aggiungi</button>
     </div>
-    ${searchBox()}<div class="filter-bar">${filters}</div>
+    ${searchBox()}${filters}
     <div class="card">${rows}</div>`;
 }
 
 function renderBreakfastPicker() {
-  const opts = [["tutte","Tutte"],["mattina","☀️ Mattina"],["sera","🌙 Sera prima"]];
-  const visible = state.bFilter==="tutte" ? state.breakfasts : state.bFilter==="sera" ? state.breakfasts.filter(b=>b.prepAhead) : state.breakfasts.filter(b=>!b.prepAhead);
-  const filters = opts.map(([k,l]) => `<button class="filter-btn ${state.bFilter===k?'active':''}" onclick="setBFilter('${k}');render()">${l}</button>`).join("");
+  const visible = visibleBreakfasts();
+  const filters = filterBarHtml(BREAKFAST_FILTERS, state.bFilter, "setBFilter");
   const rows = visible.map(b => {
-    const col = b.prepAhead ? "#7C6FF0" : "#E07C3B";
-    const bg  = b.prepAhead ? "#EEEEFF" : "#FFF3EE";
-    const lbl = b.prepAhead ? "🌙 Sera prima" : "☀️ Mattina";
+    const {col, bg, lbl} = bMeta(b.prepAhead);
     return `<div style="padding:12px;border-bottom:1px solid #f5f5f5;cursor:pointer;display:flex;align-items:center;gap:12px" onclick="assignBreakfast('${b.id}')">
       <div style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0"></div>
       <div style="flex:1">
@@ -803,7 +829,7 @@ function renderBreakfastPicker() {
       <input class="input" id="custom-breakfast-input" placeholder="Scrivi una colazione personalizzata (es. Cornetto, Brunch…)" style="flex:1">
       <button class="btn btn-primary" onclick="assignCustomBreakfast()">Aggiungi</button>
     </div>
-    <div class="filter-bar">${filters}</div>
+    ${filters}
     <div class="card">${rows}</div>`;
 }
 
@@ -867,22 +893,6 @@ function renderDispensa() {
       <p style="font-size:12px;color:#aaa;margin-top:10px;text-align:center">${state.pantry.length} element${state.pantry.length===1?"o":"i"} in dispensa</p>`;
   }
 
-  const ingList = getAllKnownIngredients();
-  const promptText = `Analizza la foto di questo scontrino e generami un file .txt con un alimento per riga nel formato:
-nome prodotto - quantità unità
-
-Usa ESATTAMENTE uno di questi nomi quando possibile (scegli il più adatto):
-${ingList.join("\n")}
-
-Per prodotti non in lista usa nomi generici senza marchi né varietà.
-Ignora prodotti non alimentari (detersivi, cosmetici, ecc.).
-Unità accettate: g, kg, ml, l, pz
-
-Esempio output:
-uova - 6 pz
-latte - 1 l
-pasta - 500 g`;
-
   const modal = state.showReceiptModal ? `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target===this){state.showReceiptModal=false;render()}">
     <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:720px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
@@ -893,7 +903,7 @@ pasta - 500 g`;
         <button onclick="state.showReceiptModal=false;render()" style="background:none;border:none;font-size:24px;color:#aaa;cursor:pointer;padding:0 4px">×</button>
       </div>
       <div style="flex:1;overflow-y:auto;padding:16px 20px">
-        <div style="background:#F8F8F8;border:1px solid #E0E0E0;border-radius:10px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.6;color:#333;max-height:300px;overflow-y:auto">${h(promptText)}</div>
+        <div style="background:#F8F8F8;border:1px solid #E0E0E0;border-radius:10px;padding:12px;font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.6;color:#333;max-height:300px;overflow-y:auto">${h(receiptPrompt())}</div>
       </div>
       <div style="padding:0 20px 12px">
         <textarea id="receipt-paste" class="input" style="height:100px;resize:none;font-family:monospace;font-size:12px" placeholder="...oppure incolla qui la risposta di Claude"></textarea>
@@ -934,8 +944,8 @@ pasta - 500 g`;
 function renderSpesa() {
   const plan = state.weekPlan[weekKey(state.weekOffset)] || {};
   const bplan = state.weekBreakfast[weekKey(state.weekOffset)] || {};
-  const dinners = Object.values(plan).filter(v => v && !v.startsWith("__custom__:")).length;
-  const bfasts = Object.values(bplan).filter(v => v && !v.startsWith("__custom__:")).length;
+  const dinners = Object.values(plan).filter(v => v && !isCustomEntry(v)).length;
+  const bfasts = Object.values(bplan).filter(v => v && !isCustomEntry(v)).length;
   const usedCount = dinners + bfasts;
   const todo = state.shopping.filter(i => !i.checked);
   const done = state.shopping.filter(i => i.checked);
@@ -989,7 +999,7 @@ function renderSpesa() {
       <div class="checkbox ${item.checked?'checked':''}" onclick="toggleCheck('${item.id}')">${item.checked?"✓":""}</div>
       <span class="check-label ${item.checked?'done':''}">${h(item.name)}</span>
       ${item.restock?`<span style="font-size:10px;font-weight:600;color:#7C6FF0;background:#EEEEFF;border-radius:10px;padding:1px 7px;white-space:nowrap">scorta</span>`:""}
-      ${item.unit&&item.unit!=="qb"&&item.amount>0?`<span class="check-qty">${item.amount} ${h(item.unit)}</span>`:""}
+      ${item.amount>0&&item.unit!=="qb"?`<span class="check-qty">${item.amount}${item.unit?" "+h(item.unit):""}</span>`:""}
       ${item.unit==="qb"?`<span style="font-size:12px;color:#bbb">q.b.</span>`:""}
       ${item.manual?`<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;padding:0 2px" onclick="removeShopItem('${item.id}')">×</button>`:""}
     </div>`;
@@ -1020,10 +1030,9 @@ function renderDetail() {
   const isBreakfast = state.detailType === "breakfast";
   const item = isBreakfast ? state.breakfasts.find(b=>b.id===state.detailId) : state.recipes.find(r=>r.id===state.detailId);
   if (!item) return "<p>Non trovato.</p>";
-  const accentColor = isBreakfast ? (item.prepAhead?"#7C6FF0":"#E07C3B") : (TAGS[item.tag]?.dot||"#333");
-  const badge = isBreakfast
-    ? `<span class="b-badge" style="background:${item.prepAhead?"#EEEEFF":"#FFF3EE"};color:${accentColor}">${item.prepAhead?"🌙 Sera prima":"☀️ Mattina"}</span>`
-    : tagEl(item.tag);
+  const bm = isBreakfast ? bMeta(item.prepAhead) : null;
+  const accentColor = bm ? bm.col : (TAGS[item.tag]?.dot||"#333");
+  const badge = bm ? `<span class="b-badge" style="background:${bm.bg};color:${bm.col}">${bm.lbl}</span>` : tagEl(item.tag);
   const sub = isBreakfast ? "" : ` · ${item.grain} · ${item.protein}`;
   const delBtn = state.deleteConfirm === item.id
     ? `<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:#B91C1C">Sicuro?</span><button class="btn btn-danger" onclick="confirmDelete('${item.id}')">Sì</button><button class="btn btn-ghost" onclick="state.deleteConfirm=null;render()">No</button></div>`
@@ -1060,63 +1069,59 @@ function renderDetail() {
   ${steps}`;
 }
 
-function renderAddRecipe() {
-  const f = state.formData || {tag:"primavera",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
-  const tagOpts = Object.entries(TAGS).map(([k,v]) => `<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("");
-  const unitOpts = UNITS.map(u => `<option value="${u}">${u}</option>`).join("");
-  const ingRows = f.ings.map((ing,idx) => `<div class="ing-row">
+function ingRowsHtml(ings) {
+  return ings.map((ing,idx) => `<div class="ing-row">
     <input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)">
     <input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)">
     <select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select>
     <button class="ing-del" onclick="removeIng(${idx})">×</button>
   </div>`).join("");
-  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.formData=null;render()">← Indietro</button>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Aggiungi ricetta</h2>
-    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" placeholder="Es. Bowl di quinoa..." oninput="updateForm('name',this.value)"></div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tipo</label><select class="input" onchange="updateForm('tag',this.value)">${tagOpts}</select></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" placeholder="30 min" oninput="updateForm('time',this.value)"></div>
-    </div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Cereale</label><input class="input" value="${h(f.grain)}" placeholder="Quinoa" oninput="updateForm('grain',this.value)"></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Proteina</label><input class="input" value="${h(f.protein)}" placeholder="Ceci" oninput="updateForm('protein',this.value)"></div>
-    </div>
-    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
-    <div class="form-group">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
-      ${ingRows}
-    </div>
-    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:130px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
-    <button class="btn btn-primary" onclick="saveRecipe()" ${!f.name.trim()?"disabled":""}>Salva ricetta</button>`;
 }
 
-function renderAddBreakfast() {
-  const f = state.formData || {name:"",time:"",prepAhead:false,note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
-  const ingRows = f.ings.map((ing,idx) => `<div class="ing-row">
-    <input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)">
-    <input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)">
-    <select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select>
-    <button class="ing-del" onclick="removeIng(${idx})">×</button>
-  </div>`).join("");
-  return `<button class="btn btn-ghost mb12" onclick="showView('list');state.formData=null;render()">← Indietro</button>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Aggiungi colazione</h2>
-    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" placeholder="Es. Overnight oats..." oninput="updateForm('name',this.value)"></div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" placeholder="5 min" oninput="updateForm('time',this.value)"></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Preparazione</label>
-        <select class="input" onchange="updateForm('prepAhead',this.value==='sera')">
-          <option value="mattina" ${!f.prepAhead?"selected":""}>☀️ Mattina</option>
-          <option value="sera" ${f.prepAhead?"selected":""}>🌙 Sera prima</option>
-        </select>
+function emptyMealForm(isBreakfast) {
+  return isBreakfast
+    ? {name:"",time:"",prepAhead:false,note:"",steps:"",ings:[{n:"",a:"",u:"g"}]}
+    : {tag:"primavera",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]};
+}
+
+// Form unico per aggiunta/modifica di ricette e colazioni
+function renderMealForm(isBreakfast, isEdit) {
+  let f = state.formData;
+  if (!f) {
+    if (isEdit) return "<p>Non trovato.</p>";
+    f = emptyMealForm(isBreakfast);
+  }
+  const lbl = s => `<label style="font-size:12px;color:#666;display:block;margin-bottom:4px">${s}</label>`;
+  const timeField = ph => `<div>${lbl("Tempo")}<input class="input" value="${h(f.time)}" placeholder="${ph}" oninput="updateForm('time',this.value)"></div>`;
+  const typeRows = isBreakfast
+    ? `<div class="form-row mb12">
+        ${timeField("5 min")}
+        <div>${lbl("Preparazione")}
+          <select class="input" onchange="updateForm('prepAhead',this.value==='sera')">
+            <option value="mattina" ${!f.prepAhead?"selected":""}>☀️ Mattina</option>
+            <option value="sera" ${f.prepAhead?"selected":""}>🌙 Sera prima</option>
+          </select>
+        </div>
+      </div>`
+    : `<div class="form-row mb12">
+        <div>${lbl("Stagione")}<select class="input" onchange="updateForm('tag',this.value)">${Object.entries(TAGS).map(([k,v])=>`<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("")}</select></div>
+        ${timeField("30 min")}
       </div>
-    </div>
+      <div class="form-row mb12">
+        <div>${lbl("Cereale")}<input class="input" value="${h(f.grain)}" placeholder="Quinoa" oninput="updateForm('grain',this.value)"></div>
+        <div>${lbl("Proteina")}<input class="input" value="${h(f.protein)}" placeholder="Ceci" oninput="updateForm('protein',this.value)"></div>
+      </div>`;
+  return `<button class="btn btn-ghost mb12" onclick="showView('${isEdit?"detail":"list"}');state.formData=null;render()">← Indietro</button>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">${isEdit?"Modifica":"Aggiungi"} ${isBreakfast?"colazione":"ricetta"}</h2>
+    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" placeholder="${isBreakfast?"Es. Overnight oats...":"Es. Bowl di quinoa..."}" oninput="updateForm('name',this.value);document.getElementById('meal-save-btn').disabled=!this.value.trim()"></div>
+    ${typeRows}
     <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
     <div class="form-group">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
-      ${ingRows}
+      ${ingRowsHtml(f.ings)}
     </div>
-    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:120px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
-    <button class="btn btn-primary" onclick="saveBreakfast()" ${!f.name.trim()?"disabled":""}>Salva</button>`;
+    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:150px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
+    <button class="btn btn-primary" id="meal-save-btn" onclick="submitMealForm(${isBreakfast},${isEdit})" ${!f.name.trim()?"disabled":""}>${isEdit?"Salva modifiche":"Salva"}</button>`;
 }
 
 function renderImportCSV() {
@@ -1131,68 +1136,16 @@ function renderImportCSV() {
 // ═══════════════════════════════════════════════════════
 // RENDER PRINCIPALE
 // ═══════════════════════════════════════════════════════
-function renderEditRecipe() {
-  const r = state.recipes.find(x => x.id === state.editId);
-  if (!r) return "<p>Non trovato.</p>";
-  const f = state.formData || {tag:r.tag, name:r.name, time:r.time, grain:r.grain, protein:r.protein, note:r.note||"", steps:r.steps.join("\n"), ings:r.ing.map(i=>({n:i.n,a:i.a,u:i.u}))};
-  const tagOpts = Object.entries(TAGS).map(([k,v])=>`<option value="${k}" ${f.tag===k?"selected":""}>${v.label}</option>`).join("");
-  const ingRows = f.ings.map((ing,idx)=>`<div class="ing-row"><input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)"><input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)"><select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select><button class="ing-del" onclick="removeIng(${idx})">×</button></div>`).join("");
-  return `<button class="btn btn-ghost mb12" onclick="showView('detail');state.formData=null;render()">← Indietro</button>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Modifica ricetta</h2>
-    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" oninput="updateForm('name',this.value)"></div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Stagione</label><select class="input" onchange="updateForm('tag',this.value)">${tagOpts}</select></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" oninput="updateForm('time',this.value)"></div>
-    </div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Cereale</label><input class="input" value="${h(f.grain)}" oninput="updateForm('grain',this.value)"></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Proteina</label><input class="input" value="${h(f.protein)}" oninput="updateForm('protein',this.value)"></div>
-    </div>
-    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
-    <div class="form-group">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
-      ${ingRows}
-    </div>
-    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:180px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
-    <button class="btn btn-primary" onclick="saveEditRecipe()" ${!f.name.trim()?"disabled":""}>Salva modifiche</button>`;
-}
-
-function renderEditBreakfast() {
-  const b = state.breakfasts.find(x => x.id === state.editId);
-  if (!b) return "<p>Non trovato.</p>";
-  const f = state.formData || {name:b.name, time:b.time, prepAhead:b.prepAhead, note:b.note||"", steps:b.steps.join("\n"), ings:b.ing.map(i=>({n:i.n,a:i.a,u:i.u}))};
-  const ingRows = f.ings.map((ing,idx)=>`<div class="ing-row"><input class="input" value="${h(ing.n)}" placeholder="Ingrediente" oninput="updateIng(${idx},'n',this.value)"><input class="input" type="number" value="${ing.a||''}" placeholder="Qtà" oninput="updateIng(${idx},'a',this.value)"><select class="input" onchange="updateIng(${idx},'u',this.value)">${UNITS.map(u=>`<option value="${u}" ${ing.u===u?"selected":""}>${u}</option>`).join("")}</select><button class="ing-del" onclick="removeIng(${idx})">×</button></div>`).join("");
-  return `<button class="btn btn-ghost mb12" onclick="showView('detail');state.formData=null;render()">← Indietro</button>
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Modifica colazione</h2>
-    <div class="form-group"><label>Nome *</label><input class="input" value="${h(f.name)}" oninput="updateForm('name',this.value)"></div>
-    <div class="form-row mb12">
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Tempo</label><input class="input" value="${h(f.time)}" oninput="updateForm('time',this.value)"></div>
-      <div><label style="font-size:12px;color:#666;display:block;margin-bottom:4px">Preparazione</label>
-        <select class="input" onchange="updateForm('prepAhead',this.value==='sera')">
-          <option value="mattina" ${!f.prepAhead?"selected":""}>☀️ Mattina</option>
-          <option value="sera" ${f.prepAhead?"selected":""}>🌙 Sera prima</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group"><label>Nota</label><input class="input" value="${h(f.note)}" oninput="updateForm('note',this.value)"></div>
-    <div class="form-group">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label>Ingredienti</label><button class="btn btn-outline" onclick="addIng()">+ Aggiungi</button></div>
-      ${ingRows}
-    </div>
-    <div class="form-group"><label>Passaggi (uno per riga)</label><textarea class="input" style="height:180px;resize:vertical" oninput="updateForm('steps',this.value)">${h(f.steps)}</textarea></div>
-    <button class="btn btn-primary" onclick="saveEditBreakfast()" ${!f.name.trim()?"disabled":""}>Salva modifiche</button>`;
-}
-
 function render() {
   renderTabs();
   const el = document.getElementById("content");
   if (state.view === "detail") { el.innerHTML = renderDetail(); return; }
   if (state.view === "picker") { el.innerHTML = renderPicker(); return; }
   if (state.view === "breakfastPicker") { el.innerHTML = renderBreakfastPicker(); return; }
-  if (state.view === "addRecipe") { el.innerHTML = renderAddRecipe(); return; }
-  if (state.view === "editRecipe") { el.innerHTML = renderEditRecipe(); return; }
-  if (state.view === "editBreakfast") { el.innerHTML = renderEditBreakfast(); return; }
-  if (state.view === "addBreakfast") { el.innerHTML = renderAddBreakfast(); return; }
+  if (state.view === "addRecipe") { el.innerHTML = renderMealForm(false, false); return; }
+  if (state.view === "editRecipe") { el.innerHTML = renderMealForm(false, true); return; }
+  if (state.view === "editBreakfast") { el.innerHTML = renderMealForm(true, true); return; }
+  if (state.view === "addBreakfast") { el.innerHTML = renderMealForm(true, false); return; }
   if (state.view === "importCSV") { el.innerHTML = renderImportCSV(); return; }
   if (state.tab === "paniere") el.innerHTML = renderPaniere();
   else if (state.tab === "colazioni") el.innerHTML = renderColazioni();
@@ -1318,7 +1271,7 @@ function assignCustomDinner() {
   const inp = document.getElementById("custom-dinner-input");
   const val = (inp ? inp.value : "").trim();
   if (!val) return;
-  currentPlan()[state.pickingFor] = "__custom__:" + val;
+  currentPlan()[state.pickingFor] = CUSTOM_PREFIX + val;
   save("w", state.weekPlan);
   state.view = "list"; state.tab = "settimana"; render();
 }
@@ -1326,7 +1279,7 @@ function assignCustomBreakfast() {
   const inp = document.getElementById("custom-breakfast-input");
   const val = (inp ? inp.value : "").trim();
   if (!val) return;
-  currentBPlan()[state.pickingBreakfastFor] = "__custom__:" + val;
+  currentBPlan()[state.pickingBreakfastFor] = CUSTOM_PREFIX + val;
   save("wb", state.weekBreakfast);
   state.view = "list"; state.tab = "settimana"; render();
 }
@@ -1368,19 +1321,22 @@ async function refreshShopping() {
   }
 }
 
-function filterPantryDrop(val) {
-  const drop = document.getElementById("pantry-dropdown");
+// Filtra le voci di un dropdown suggerimenti; showAllWhenEmpty: mostra tutto a campo vuoto
+function filterDrop(dropId, val, showAllWhenEmpty) {
+  const drop = document.getElementById(dropId);
   if (!drop) return;
   const q = val.trim().toLowerCase();
-  const items = drop.querySelectorAll("div");
+  if (!q && !showAllWhenEmpty) { drop.style.display = "none"; return; }
   let visible = 0;
-  items.forEach(el => {
+  drop.querySelectorAll("div").forEach(el => {
     const match = !q || el.textContent.toLowerCase().includes(q);
     el.style.display = match ? "" : "none";
     if (match) visible++;
   });
   drop.style.display = visible > 0 ? "" : "none";
 }
+function filterPantryDrop(val) { filterDrop("pantry-dropdown", val, true); }
+function filterShopDrop(val) { filterDrop("shop-dropdown", val, false); }
 function selectPantryIng(name) {
   state.newPantry = name;
   const inp = document.getElementById("pantry-input");
@@ -1389,18 +1345,12 @@ function selectPantryIng(name) {
   if (drop) drop.style.display = "none";
   addPantry();
 }
-function closePantryDrop(e) {
-  const drop = document.getElementById("pantry-dropdown");
-  const inp = document.getElementById("pantry-input");
-  if (drop && inp && !inp.contains(e.target) && !drop.contains(e.target)) {
-    drop.style.display = "none";
-  }
-}
-document.addEventListener("click", closePantryDrop);
 document.addEventListener("click", e => {
-  const drop = document.getElementById("shop-dropdown");
-  const inp = document.getElementById("shop-input");
-  if (drop && inp && !inp.contains(e.target) && !drop.contains(e.target)) drop.style.display = "none";
+  for (const [dropId, inputId] of [["pantry-dropdown","pantry-input"],["shop-dropdown","shop-input"]]) {
+    const drop = document.getElementById(dropId);
+    const inp = document.getElementById(inputId);
+    if (drop && inp && !inp.contains(e.target) && !drop.contains(e.target)) drop.style.display = "none";
+  }
 });
 function addPantry() {
   const n = state.newPantry.trim();
@@ -1421,40 +1371,36 @@ function clearChecked() { state.shopping=state.shopping.map(i=>({...i,checked:fa
 function startEdit(id) {
   state.editId = id;
   const isB = state.detailType === "breakfast";
-  if (isB) {
-    const b = state.breakfasts.find(x => x.id === id);
-    state.formData = b ? {name:b.name, time:b.time, prepAhead:b.prepAhead, note:b.note||"", steps:b.steps.join("\n"), ings:b.ing.map(i=>({n:i.n,a:i.a,u:i.u}))} : null;
-  } else {
-    const r = state.recipes.find(x => x.id === id);
-    state.formData = r ? {tag:r.tag, name:r.name, time:r.time, grain:r.grain, protein:r.protein, note:r.note||"", steps:r.steps.join("\n"), ings:r.ing.map(i=>({n:i.n,a:i.a,u:i.u}))} : null;
-  }
+  const src = (isB ? state.breakfasts : state.recipes).find(x => x.id === id);
+  state.formData = src ? {
+    ...(isB ? {prepAhead: src.prepAhead} : {tag: src.tag, grain: src.grain, protein: src.protein}),
+    name: src.name, time: src.time, note: src.note || "",
+    steps: src.steps.join("\n"), ings: src.ing.map(i => ({n:i.n, a:i.a, u:i.u})),
+  } : null;
   state.view = isB ? "editBreakfast" : "editRecipe";
   render();
 }
-function saveEditRecipe() {
+function submitMealForm(isBreakfast, isEdit) {
   const f = state.formData;
   if (!f || !f.name.trim()) return;
-  state.recipes = state.recipes.map(r => r.id === state.editId
-    ? {...r, tag:f.tag, name:f.name.trim(), time:f.time, grain:f.grain, protein:f.protein, note:f.note,
-       ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),
-       steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)}
-    : r);
-  save("r", state.recipes);
+  const base = {
+    name: f.name.trim(), time: f.time, note: f.note,
+    ing: f.ings.filter(i => i.n.trim()).map(i => ({n:i.n.trim(), a:parseFloat(i.a)||0, u:i.u})),
+    steps: f.steps.split("\n").map(s => s.trim()).filter(Boolean),
+  };
+  if (isBreakfast) {
+    const b = {...base, prepAhead: !!f.prepAhead};
+    if (isEdit) state.breakfasts = state.breakfasts.map(x => x.id === state.editId ? {...x, ...b} : x);
+    else state.breakfasts.push({id: uid(), ...b});
+    save("b", state.breakfasts);
+  } else {
+    const r = {...base, tag: f.tag, grain: f.grain, protein: f.protein};
+    if (isEdit) state.recipes = state.recipes.map(x => x.id === state.editId ? {...x, ...r} : x);
+    else state.recipes.push({id: uid(), ...r});
+    save("r", state.recipes);
+  }
   state.formData = null;
-  state.view = "detail";
-  render();
-}
-function saveEditBreakfast() {
-  const f = state.formData;
-  if (!f || !f.name.trim()) return;
-  state.breakfasts = state.breakfasts.map(b => b.id === state.editId
-    ? {...b, name:f.name.trim(), time:f.time, prepAhead:!!f.prepAhead, note:f.note,
-       ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),
-       steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)}
-    : b);
-  save("b", state.breakfasts);
-  state.formData = null;
-  state.view = "detail";
+  state.view = isEdit ? "detail" : "list";
   render();
 }
 function confirmDelete(id) {
@@ -1471,21 +1417,10 @@ function confirmDelete(id) {
   state.deleteConfirm=null; state.view="list"; render();
 }
 
-function updateForm(k,v) { if(!state.formData)state.formData={tag:"primavera",name:"",time:"",grain:"",protein:"",note:"",steps:"",ings:[{n:"",a:"",u:"g"}]}; state.formData[k]=v; }
+function updateForm(k,v) { if(!state.formData)state.formData=emptyMealForm(state.view==="addBreakfast"||state.view==="editBreakfast"); state.formData[k]=v; }
 function updateIng(idx,k,v) { if(state.formData&&state.formData.ings[idx])state.formData.ings[idx][k]=v; }
 function addIng() { if(!state.formData)return; state.formData.ings.push({n:"",a:"",u:"g"}); render(); }
 function removeIng(idx) { if(!state.formData)return; state.formData.ings.splice(idx,1); render(); }
-
-function saveRecipe() {
-  const f=state.formData; if(!f||!f.name.trim())return;
-  const r={id:uid(),tag:f.tag,name:f.name.trim(),time:f.time,grain:f.grain,protein:f.protein,note:f.note,ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)};
-  state.recipes.push(r); save("r",state.recipes); state.formData=null; state.view="list"; render();
-}
-function saveBreakfast() {
-  const f=state.formData; if(!f||!f.name.trim())return;
-  const b={id:uid(),name:f.name.trim(),time:f.time,prepAhead:!!f.prepAhead,note:f.note,ing:f.ings.filter(i=>i.n.trim()).map(i=>({n:i.n.trim(),a:parseFloat(i.a)||0,u:i.u})),steps:f.steps.split("\n").map(s=>s.trim()).filter(Boolean)};
-  state.breakfasts.push(b); save("b",state.breakfasts); state.formData=null; state.view="list"; render();
-}
 
 async function handleCSVFile(input) {
   const f=input.files[0]; if(!f)return;
@@ -1493,15 +1428,31 @@ async function handleCSVFile(input) {
   document.getElementById("csv-text").value=text;
   previewCSV(text);
 }
+// Divide una riga CSV rispettando i campi tra virgolette ("" = virgoletta letterale)
+function splitCSVLine(line) {
+  const out = []; let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') { if (line[i+1] === '"') { cur += '"'; i++; } else inQ = false; }
+      else cur += c;
+    }
+    else if (c === '"') inQ = true;
+    else if (c === ',') { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
 function previewCSV(text) {
   const el=document.getElementById("csv-preview"); if(!el)return;
   if(!text.trim()){el.innerHTML="";return;}
   try {
     const lines=text.trim().split(/\r?\n/); if(lines.length<2){el.innerHTML=noticeEl("warning","Almeno 2 righe necessarie.");return;}
-    const header=lines[0].split(",").map(h=>h.trim());
+    const header=splitCSVLine(lines[0]).map(h=>h.trim());
     const parsed=lines.slice(1).filter(l=>l.trim()).map(line=>{
-      const vals=line.split(","); const row={};
-      header.forEach((h,i)=>{row[h]=(vals[i]||"").trim().replace(/^"|"$/g,"");});
+      const vals=splitCSVLine(line); const row={};
+      header.forEach((h,i)=>{row[h]=(vals[i]||"").trim();});
       return{id:uid(),tag:row.tag||"primavera",name:row.name||"Senza nome",time:row.time||"",grain:row.grain||"",protein:row.protein||"",note:row.note||"",
         ing:(row.ingredients||"").split("|").filter(Boolean).map(s=>{const[n,a,u]=s.split(":");return{n:(n||"").trim(),a:parseFloat(a)||0,u:(u||"qb").trim()};}),
         steps:(row.steps||"").split("|").filter(Boolean).map(s=>s.trim())};
@@ -1521,15 +1472,29 @@ function importParsed() {
 // ═══════════════════════════════════════════════════════
 function markConsumed(day) {
   const raw = currentPlan()[day];
-  if (!raw || raw.startsWith("__custom__:")) return;
+  if (!raw || isCustomEntry(raw)) return;
   const recipe = state.recipes.find(r => r.id === raw);
   if (!recipe) return;
-  if (!confirm(`Rimuovere gli ingredienti di "${recipe.name}" dalla dispensa?`)) return;
-  const ingNames = recipe.ing.map(i => i.n.toLowerCase().trim());
-  state.pantry = state.pantry.filter(p => {
+  if (!confirm(`Scalare gli ingredienti di "${recipe.name}" dalla dispensa?`)) return;
+  // Match per nome esatto o prefisso ("riso" ↔ "riso integrale"),
+  // ma non per parola interna ("limone" non tocca "succo di limone")
+  const matches = (pn, n) => pn === n || pn.startsWith(n + " ") || n.startsWith(pn + " ");
+  const remaining = [];
+  for (const p of state.pantry) {
     const pn = p.name.toLowerCase().trim();
-    return !ingNames.some(n => pn.includes(n) || n.includes(pn));
-  });
+    const ing = recipe.ing.find(i => matches(pn, i.n.toLowerCase().trim()));
+    if (!ing) { remaining.push(p); continue; }
+    const used = ing.a > 0 ? toBase(ing.a, ing.u) : null;
+    if (!used) { remaining.push(p); continue; } // "qb": non consuma la scorta
+    const have = p.qty != null ? toBase(p.qty, p.unit) : null;
+    if (have && have.d === used.d && have.v > used.v) {
+      // Quantità note e confrontabili: scala solo il consumato
+      p.qty = Math.round(((have.v - used.v) / toBase(1, p.unit).v) * 100) / 100;
+      remaining.push(p);
+    }
+    // Altrimenti (quantità ignota o consumata del tutto): rimuovi l'articolo
+  }
+  state.pantry = remaining;
   save("p", state.pantry);
   render();
 }
@@ -1560,8 +1525,9 @@ function adjustPantryQty(id, delta) {
   const item = state.pantry.find(p => p.id === id);
   if (!item) return;
   const current = item.qty != null ? item.qty : 0;
-  const next = Math.max(0, Math.round((current + delta) * 100) / 100);
-  item.qty = next === 0 ? null : next;
+  // 0 resta 0 ("esaurito"), diverso da null ("quantità sconosciuta"):
+  // a zero l'ingrediente torna acquistabile nella lista della spesa
+  item.qty = Math.max(0, Math.round((current + delta) * 100) / 100);
   // Prima quantità impostata → diventa anche la scorta desiderata di default
   if (seedDesired(item.name, item.qty, item.unit)) save("d", state.desired);
   save("p", state.pantry);
@@ -1632,10 +1598,9 @@ function clearToken() {
   render();
 }
 
-function importPastedReceipt() {
-  const ta = document.getElementById("receipt-paste");
-  if (!ta || !ta.value.trim()) { alert("Incolla prima il testo nell'area di testo."); return; }
-  const lines = ta.value.split(/\r?\n/).filter(l => l.trim());
+// Importa in dispensa righe nel formato "nome - quantità unità" (output del prompt scontrino)
+function importReceiptText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
   let added = 0, updated = 0;
   for (const line of lines) {
     const parts = line.split(/\s*[-–—]\s*/);
@@ -1663,10 +1628,18 @@ function importPastedReceipt() {
   alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
 }
 
+function importPastedReceipt() {
+  const ta = document.getElementById("receipt-paste");
+  if (!ta || !ta.value.trim()) { alert("Incolla prima il testo nell'area di testo."); return; }
+  importReceiptText(ta.value);
+}
+
+function receiptPrompt() {
+  return `Analizza la foto di questo scontrino e generami un file .txt con un alimento per riga nel formato:\nnome prodotto - quantità unità\n\nUsa ESATTAMENTE uno di questi nomi quando possibile (scegli il più adatto):\n${getAllKnownIngredients().join("\n")}\n\nPer prodotti non in lista usa nomi generici senza marchi né varietà.\nIgnora prodotti non alimentari (detersivi, cosmetici, ecc.).\nUnità accettate: g, kg, ml, l, pz\n\nEsempio output:\nuova - 6 pz\nlatte - 1 l\npasta - 500 g`;
+}
+
 function copyReceiptPrompt() {
-  const ingList = getAllKnownIngredients();
-  const text = `Analizza la foto di questo scontrino e generami un file .txt con un alimento per riga nel formato:\nnome prodotto - quantità unità\n\nUsa ESATTAMENTE uno di questi nomi quando possibile (scegli il più adatto):\n${ingList.join("\n")}\n\nPer prodotti non in lista usa nomi generici senza marchi né varietà.\nIgnora prodotti non alimentari (detersivi, cosmetici, ecc.).\nUnità accettate: g, kg, ml, l, pz\n\nEsempio output:\nuova - 6 pz\nlatte - 1 l\npasta - 500 g`;
-  navigator.clipboard.writeText(text).then(() => {
+  navigator.clipboard.writeText(receiptPrompt()).then(() => {
     const btn = document.querySelector('[onclick="copyReceiptPrompt()"]');
     if (btn) { btn.textContent = "✓ Copiato!"; setTimeout(() => { btn.textContent = "📋 Copia prompt"; }, 2000); }
   }).catch(() => alert("Copia manuale: seleziona il testo nel riquadro grigio"));
@@ -1676,33 +1649,8 @@ function handlePantryTxt(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
-    let added = 0, updated = 0;
-    for (const line of lines) {
-      const parts = line.split(/\s*[-–—]\s*/);
-      const name = (parts[0] || '').trim();
-      if (!name) continue;
-      const rest = (parts[1] || '').trim();
-      const m = rest.match(/^([\d.,]+)\s*(.*)$/);
-      const qty = m ? parseFloat(m[1].replace(',', '.')) : null;
-      const unit = m ? (m[2].trim() || 'pz') : '';
-      const existing = state.pantry.find(p => p.name.toLowerCase() === name.toLowerCase());
-      if (existing) {
-        if (qty !== null) existing.qty = (existing.qty || 0) + qty;
-        seedDesired(existing.name, existing.qty, existing.unit);
-        updated++;
-      } else {
-        state.pantry.push({id:uid(), name, qty: qty||null, unit, category: categorizeItem(name)});
-        seedDesired(name, qty, unit);
-        added++;
-      }
-    }
-    save("p", state.pantry);
-    save("d", state.desired);
+    importReceiptText(e.target.result);
     input.value = "";
-    state.showReceiptModal = false;
-    render();
-    alert(`Importati: ${added} nuovi, ${updated} aggiornati.`);
   };
   reader.readAsText(file);
 }
@@ -1712,21 +1660,6 @@ function removeCheckedItems() {
   state.shopping = state.shopping.filter(i => !i.checked);
   save("s", state.shopping);
   render();
-}
-
-function filterShopDrop(val) {
-  const drop = document.getElementById("shop-dropdown");
-  if (!drop) return;
-  const q = val.trim().toLowerCase();
-  if (!q) { drop.style.display = "none"; return; }
-  const items = drop.querySelectorAll("div");
-  let visible = 0;
-  items.forEach(el => {
-    const match = el.textContent.toLowerCase().includes(q);
-    el.style.display = match ? "" : "none";
-    if (match) visible++;
-  });
-  drop.style.display = visible > 0 ? "" : "none";
 }
 
 function selectShopIng(name) {
