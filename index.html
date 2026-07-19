@@ -170,7 +170,9 @@
 // ═══════════════════════════════════════════════════════
 // DATI
 // ═══════════════════════════════════════════════════════
-const DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
+const DAYS = ["Sabato","Domenica","Lunedì","Martedì","Mercoledì","Giovedì","Venerdì"];
+// Ordine usato dai dati salvati prima che la settimana partisse dal sabato (per migrazione)
+const LEGACY_MONDAY_DAYS = ["Lunedì","Martedì","Mercoledì","Giovedì","Venerdì","Sabato","Domenica"];
 const UNITS = ["g","kg","ml","l","pz","cucchiai","cucchiaio","cucchiaino","qb"];
 
 const SHOP_CATS = [
@@ -320,11 +322,11 @@ function categorizeItem(name) {
 function getWeekDates(offset) {
   const today = new Date();
   const dow = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + (offset || 0) * 7);
+  const saturday = new Date(today);
+  saturday.setDate(today.getDate() - ((dow + 1) % 7) + (offset || 0) * 7);
   return Array.from({length:7}, (_,i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
+    const d = new Date(saturday);
+    d.setDate(saturday.getDate() + i);
     return d;
   });
 }
@@ -394,9 +396,9 @@ let state = {
   portionScale: 1,
   recipes: JSON.parse(JSON.stringify(SEED_RECIPES)),
   breakfasts: JSON.parse(JSON.stringify(SEED_BREAKFASTS)),
-  weekPlan: {},
-  weekBreakfast: {},
-  weekLunch: {},
+  weekPlan: {__satMigrated:true},
+  weekBreakfast: {__satMigrated:true},
+  weekLunch: {__satMigrated:true},
   editLunchDay: null,
   pantry: [],
   shopping: [],
@@ -471,7 +473,7 @@ async function sSet(key, val) {
 function applyVal(k, val) {
   if (val === null || val === undefined) return;
   if (k==="r") state.recipes = val;
-  else if (k==="w") state.weekPlan = migrateWeekData(val);
+  else if (k==="w") state.weekPlan = migrateToSaturdayStart("w", migrateWeekData(val));
   else if (k==="d") state.desired = (val && typeof val === "object" && !Array.isArray(val)) ? val : {};
   else if (k==="p") {
     state.pantry = val;
@@ -480,8 +482,8 @@ function applyVal(k, val) {
   }
   else if (k==="s") state.shopping = val.map(i => i.manual ? {...i, category: categorizeItem(i.name)} : i);
   else if (k==="b") state.breakfasts = val;
-  else if (k==="wb") state.weekBreakfast = migrateWeekData(val);
-  else if (k==="wl") state.weekLunch = migrateWeekData(val);
+  else if (k==="wb") state.weekBreakfast = migrateToSaturdayStart("wb", migrateWeekData(val));
+  else if (k==="wl") state.weekLunch = migrateToSaturdayStart("wl", migrateWeekData(val));
 }
 
 function loadLocal() {
@@ -607,6 +609,38 @@ function migrateWeekData(obj) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
   for (const k of Object.keys(obj)) { const d = new Date(k); if (!isNaN(d) && d < cutoff) delete obj[k]; }
   return obj;
+}
+// Migrazione una tantum: la settimana passava da Lunedì-Domenica a Sabato-Venerdì.
+// I dati vecchi sono chiave "data del lunedì" → {NomeGiorno: valore}; li rimappiamo
+// ricalcolando la data reale di ogni giorno e riassegnandola alla settimana (Sabato-Venerdì)
+// a cui appartiene ora. Idempotente: una volta migrato l'oggetto porta il flag __satMigrated.
+function saturdayKeyForDate(date) {
+  const dow = date.getDay();
+  const sat = new Date(date);
+  sat.setDate(date.getDate() - ((dow + 1) % 7));
+  return `${sat.getFullYear()}-${String(sat.getMonth()+1).padStart(2,"0")}-${String(sat.getDate()).padStart(2,"0")}`;
+}
+function migrateToSaturdayStart(storeKey, obj) {
+  if (!obj || typeof obj !== "object") return {};
+  if (obj.__satMigrated) return obj;
+  const result = { __satMigrated: true };
+  for (const k of Object.keys(obj)) {
+    if (k.startsWith("__")) continue;
+    const dayMap = obj[k];
+    const base = new Date(k);
+    if (!dayMap || typeof dayMap !== "object" || isNaN(base)) continue;
+    for (const dayName of Object.keys(dayMap)) {
+      const idx = LEGACY_MONDAY_DAYS.indexOf(dayName);
+      if (idx === -1) continue;
+      const actualDate = new Date(base);
+      actualDate.setDate(base.getDate() + idx);
+      const newKey = saturdayKeyForDate(actualDate);
+      if (!result[newKey]) result[newKey] = {};
+      result[newKey][dayName] = dayMap[dayName];
+    }
+  }
+  save(storeKey, result);
+  return result;
 }
 function seasonForDate(d) {
   const m = d.getMonth() + 1;
@@ -781,7 +815,7 @@ function generateShoppingList() {
 // ═══════════════════════════════════════════════════════
 // BOTTOM NAV
 // ═══════════════════════════════════════════════════════
-const TABS = [["oggi","Oggi","🏠"],["ricette","Ricette","🍽️"],["settimana","Settimana","📅"],["dispensa","Dispensa","🧺"],["spesa","Spesa","🛒"],["impostazioni","Imp.","⚙️"]];
+const TABS = [["oggi","Oggi","🏠"],["settimana","Settimana","📅"],["ricette","Ricette","🍽️"],["dispensa","Dispensa","🧺"],["spesa","Spesa","🛒"],["impostazioni","Imp.","⚙️"]];
 function renderBottomNav() {
   const expWarn = expiringItems().length > 0;
   const shopTodo = state.shopping.some(i => !i.checked);
@@ -822,7 +856,7 @@ function searchBox() {
 // scadenze imminenti e stato della lista della spesa — sempre riferito alla settimana
 // reale di oggi, indipendentemente da quale settimana si sta sfogliando in "Settimana".
 function renderOggi() {
-  const todayIdx = (new Date().getDay() + 6) % 7; // Lunedì=0 ... Domenica=6
+  const todayIdx = (new Date().getDay() + 1) % 7; // Sabato=0 ... Venerdì=6
   const todayName = DAYS[todayIdx];
   const wk = weekKey(0);
   const plan = state.weekPlan[wk] || {};
@@ -1065,6 +1099,9 @@ function renderSettimana() {
       <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset--;render()">←</button>
       <span style="font-size:13px;font-weight:600;color:#555">${weekLabel}</span>
       <button class="btn btn-outline" style="padding:5px 10px" onclick="state.weekOffset++;render()">→</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-outline" style="padding:4px 10px;font-size:12px" onclick="copyPreviousWeek()" title="Copia i pasti della settimana precedente nei giorni ancora vuoti">📋 Copia settimana precedente</button>
     </div>
     ${noticeEl("info","La cena diventa automaticamente il <strong>pranzo del giorno dopo</strong>. 🌙 = prepara la colazione di domani stasera.")}
     ${filledDinner < 7 ? `<button class="btn btn-outline mb12" style="width:100%;justify-content:center" onclick="autoFillWeek()">✨ Riempi le cene vuote con ricette di stagione</button>` : ""}
@@ -1606,6 +1643,33 @@ function recipeIdsIn(weekObj) {
   const s = new Set();
   if (weekObj) for (const v of Object.values(weekObj)) { const ref = planRef(v); if (ref && !ref.custom) s.add(ref.id); }
   return s;
+}
+// Copia i pasti della settimana precedente nella settimana corrente, senza sovrascrivere
+// i giorni/pasti già pianificati: riempie solo gli slot ancora vuoti.
+function copyPreviousWeek() {
+  const prevK = weekKey(state.weekOffset - 1);
+  const prevPlan = state.weekPlan[prevK] || {};
+  const prevBPlan = state.weekBreakfast[prevK] || {};
+  const prevLPlan = state.weekLunch[prevK] || {};
+  if (!Object.keys(prevPlan).length && !Object.keys(prevBPlan).length && !Object.keys(prevLPlan).length) {
+    toast("Nessun pasto nella settimana precedente da copiare");
+    return;
+  }
+  const plan = currentPlan();
+  const bplan = currentBPlan();
+  const lplan = currentLunchPlan();
+  let count = 0;
+  for (const day of DAYS) {
+    if (!plan[day] && prevPlan[day]) { plan[day] = prevPlan[day]; count++; }
+    if (!bplan[day] && prevBPlan[day]) { bplan[day] = prevBPlan[day]; count++; }
+    if (!lplan[day] && prevLPlan[day]) { lplan[day] = prevLPlan[day]; count++; }
+  }
+  if (!count) { toast("Nessuno slot vuoto da riempire"); return; }
+  save("w", state.weekPlan);
+  save("wb", state.weekBreakfast);
+  save("wl", state.weekLunch);
+  toast(`Copiati ${count} pasti dalla settimana precedente`);
+  render();
 }
 function autoFillWeek() {
   const plan = currentPlan();
