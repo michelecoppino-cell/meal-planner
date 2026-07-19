@@ -117,7 +117,7 @@ export default {
   },
 };
 
-async function addShoppingItem(env, name, amount = 0, unit = "") {
+async function addShoppingItem(env, name, amount = 0, unit = "", source = "") {
   const clean = String(name).trim();
   const raw = await env.KV.get(SHOPPING_KEY);
   let list = [];
@@ -146,6 +146,7 @@ async function addShoppingItem(env, name, amount = 0, unit = "") {
     manual: true,
     category: "varie", // l'app ricategorizza le voci manuali al caricamento
   };
+  if (source) item.source = source;
   list.push(item);
   await env.KV.put(SHOPPING_KEY, JSON.stringify(list), { metadata: { t: Date.now() } });
   return item;
@@ -217,7 +218,7 @@ async function handleAlexa(request, env) {
       const quantita = quantitaRaw ? Number(quantitaRaw) : 0;
       if (!articolo) return alexaSpeak("Cosa devo aggiungere al planner?", false);
       try {
-        await addShoppingItem(env, articolo, quantita);
+        await addShoppingItem(env, articolo, quantita, "", "alexa");
       } catch (err) {
         return alexaSpeak(`Non sono riuscito ad aggiungere ${articolo} al planner. Riprova tra poco.`, true);
       }
