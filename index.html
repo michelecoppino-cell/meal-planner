@@ -410,6 +410,7 @@ let state = {
   showReceiptModal: false,
   openPantryCats: {},
   editExpiryId: null,
+  shopSourceItemId: null,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -717,17 +718,17 @@ function generateShoppingList() {
   const plan = state.weekPlan[weekKey(state.weekOffset)] || {};
   const bplan = state.weekBreakfast[weekKey(state.weekOffset)] || {};
   const meals = [];
-  for (const v of Object.values(plan)) {
+  for (const [day, v] of Object.entries(plan)) {
     if (!v || isCustomEntry(v)) continue;
     const ref = planRef(v);
     const r = state.recipes.find(x => x.id === ref.id);
-    if (r) meals.push({item: r, scale: ref.scale});
+    if (r) meals.push({item: r, scale: ref.scale, day, meal: "cena"});
   }
-  for (const v of Object.values(bplan)) {
+  for (const [day, v] of Object.entries(bplan)) {
     if (!v || isCustomEntry(v)) continue;
     const ref = planRef(v);
     const b = state.breakfasts.find(x => x.id === ref.id);
-    if (b) meals.push({item: b, scale: ref.scale});
+    if (b) meals.push({item: b, scale: ref.scale, day, meal: "colazione"});
   }
   const agg = {};
   for (const m of meals) {
@@ -735,7 +736,10 @@ function generateShoppingList() {
       const key = ing.n.toLowerCase().trim() + "::" + ing.u;
       const amt = ing.u === "qb" ? ing.a : Math.round(ing.a * m.scale * 100) / 100;
       if (agg[key]) { if (ing.u !== "qb") agg[key].amount += amt; }
-      else agg[key] = {name: ing.n, amount: amt, unit: ing.u};
+      else agg[key] = {name: ing.n, amount: amt, unit: ing.u, sources: []};
+      if (!agg[key].sources.some(s => s.recipeId === m.item.id && s.day === m.day && s.meal === m.meal)) {
+        agg[key].sources.push({recipeId: m.item.id, recipeName: m.item.name, day: m.day, meal: m.meal});
+      }
     }
   }
   const pmap = new Map(state.pantry.map(p => [p.name.toLowerCase().trim(), p]));
@@ -771,7 +775,7 @@ function generateShoppingList() {
   }
   return out
     .sort((a,b) => a.name.localeCompare(b.name,"it"))
-    .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false, restock:!!i.restock, category:categorizeItem(i.name)}));
+    .map(i => ({id:uid(), name:i.name, amount:i.amount, unit:i.unit, checked:false, manual:false, restock:!!i.restock, sources:i.sources||[], category:categorizeItem(i.name)}));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1266,11 +1270,18 @@ function renderSpesa() {
     return headerCard + addExtra + noticeEl("info","Lista vuota. Pianifica la settimana e premi \"Genera lista\".");
   }
 
+  const originBadge = (item) => {
+    const style = "font-size:10px;font-weight:600;color:#888;background:#F0F0F0;border-radius:10px;padding:1px 7px;white-space:nowrap";
+    if (item.restock) return `<span style="${style}">rifornimento dispensa</span>`;
+    if (item.source === "alexa") return `<span style="${style}">Alexa</span>`;
+    if (item.sources && item.sources.length) return `<span style="${style};cursor:pointer" onclick="event.stopPropagation();showItemSource('${item.id}')">ricetta</span>`;
+    return "";
+  };
   const makeItem = (item) => `
     <div class="check-item">
       <div class="checkbox ${item.checked?'checked':''}" onclick="toggleCheck('${item.id}')">${item.checked?"✓":""}</div>
       <span class="check-label ${item.checked?'done':''}">${h(item.name)}</span>
-      ${item.restock?`<span style="font-size:10px;font-weight:600;color:#7C6FF0;background:#EEEEFF;border-radius:10px;padding:1px 7px;white-space:nowrap">scorta</span>`:""}
+      ${originBadge(item)}
       ${item.amount>0&&item.unit!=="qb"?`<span class="check-qty">${item.amount}${item.unit?" "+h(item.unit):""}</span>`:""}
       ${item.unit==="qb"?`<span style="font-size:12px;color:#bbb">q.b.</span>`:""}
       ${item.manual?`<button style="background:none;border:none;cursor:pointer;color:#ccc;font-size:18px;line-height:1;padding:0 2px" onclick="removeShopItem('${item.id}')">×</button>`:""}
@@ -1295,8 +1306,23 @@ function renderSpesa() {
     ${done.map(makeItem).join("")}
   </div>` : "";
 
-  return headerCard + progressBar + addExtra + todoSect + doneSect;
+  const sourceItem = state.shopSourceItemId ? state.shopping.find(i => i.id === state.shopSourceItemId) : null;
+  const sourceModal = sourceItem ? `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;display:flex;align-items:flex-end;justify-content:center" onclick="if(event.target===this){state.shopSourceItemId=null;render()}">
+    <div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:720px;max-height:70vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+        <div style="font-size:16px;font-weight:700">${h(sourceItem.name)}</div>
+        <button onclick="state.shopSourceItemId=null;render()" style="background:none;border:none;font-size:24px;color:#aaa;cursor:pointer;padding:0 4px">×</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:8px 20px 16px">
+        <div style="font-size:12px;color:#888;margin:8px 0">Presente in queste ricette pianificate:</div>
+        ${(sourceItem.sources||[]).map(s => `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#111">${h(s.recipeName)} <span style="color:#888">— ${h(s.day)} (${h(s.meal)})</span></div>`).join("")}
+      </div>
+    </div>
+  </div>` : "";
+
+  return sourceModal + headerCard + progressBar + addExtra + todoSect + doneSect;
 }
+function showItemSource(id) { state.shopSourceItemId = id; render(); }
 
 function renderDetail() {
   const isBreakfast = state.detailType === "breakfast";
