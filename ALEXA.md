@@ -43,9 +43,17 @@ Nota sull'invocation name: scegline uno facile da pronunciare **in italiano**
 affidabile il riconoscimento del punto in cui l'invocation name finisce e
 inizia la frase, aumentando il rischio del problema sopra.
 
-Nota: non si può usare la lista della spesa *nativa* di Alexa perché Amazon ha
-dismesso la List Management API per terze parti (luglio 2024). La skill custom
-qui sotto è la strada supportata — e resta privata sul tuo account.
+Nota sulla lista *nativa* di Alexa: una skill non la può leggere né scrivere,
+perché Amazon ha dismesso la List Management API per terze parti (luglio 2024).
+La skill custom qui sotto è la strada supportata per la voce — e resta privata
+sul tuo account.
+
+Quella lista non è però irraggiungibile in assoluto: **Home Assistant la vede**
+(come entità `todo.*`) e può travasarne il contenuto nel planner. Così anche la
+frase corta — *"Alexa, aggiungi il latte alla lista della spesa"*, senza
+nominare la skill — finisce nell'app. Il giro è descritto in
+[`HOME_ASSISTANT.md`](HOME_ASSISTANT.md). Le due strade convivono: quella qui
+sotto serve comunque per la dispensa, che dalla lista nativa non passa.
 
 ## Prerequisito: aggiornare il Worker
 
