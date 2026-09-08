@@ -7,7 +7,7 @@
 //                           se expectedVersion è indicata e non combacia con quella corrente,
 //                           risponde 409 con il valore/versione attuali invece di sovrascrivere
 //                           alla cieca (evita che due dispositivi si cancellino le modifiche a vicenda)
-//   POST /add-item        → {name, amount?, unit?} appende    (richiede header X-Auth)
+//   POST /add-item        → {name, amount?, unit?, source?} appende (richiede header X-Auth)
 //                           una voce alla lista della spesa
 //   POST /alexa           → endpoint per la skill Alexa custom (verifica lo skill ID,
 //                           vedi ALEXA.md nella root del repo). Gestisce:
@@ -107,9 +107,11 @@ export default {
     if (url.pathname === "/add-item" && request.method === "POST") {
       let body;
       try { body = await request.json(); } catch { return json({ error: "bad request" }, 400); }
-      const { name, amount, unit } = body;
+      const { name, amount, unit, source } = body;
       if (!name || !String(name).trim()) return json({ error: "missing name" }, 400);
-      const item = await addShoppingItem(env, name, amount, unit);
+      // "source" e' l'origine della voce ("alexa" per il ponte Home Assistant,
+      // vedi HOME_ASSISTANT.md): l'app la mostra come badge accanto all'articolo.
+      const item = await addShoppingItem(env, name, amount, unit, String(source || "").trim());
       return json({ ok: true, item });
     }
 

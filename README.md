@@ -8,6 +8,7 @@ Meal planner familiare: ricette stagionali, colazioni, piano settimanale, dispen
 - `manifest.json`, `sw.js`, `icon.svg` — PWA: installabile sulla home e utilizzabile offline
 - `worker/worker.js` — Worker Cloudflare: storage KV, `/add-item`, endpoint `/alexa`
 - `ALEXA.md` — guida per aggiungere articoli alla spesa con la voce (Alexa, Siri)
+- `HOME_ASSISTANT.md` — il ponte Home Assistant: quello che si detta alla lista della spesa *nativa* di Alexa finisce da solo nel planner
 - `dist/` — output di build (copia dei file statici)
 
 ## Build & deploy
@@ -42,6 +43,6 @@ Bottom nav con 5 sezioni: **Oggi** (colazione/pranzo/cena di oggi, promemoria �
 - Dispensa con categorie **riordinabili** (frecce ▲▼ in Impostazioni, per rispecchiare il percorso al supermercato), import da scontrino (via prompt per Claude), quantità +/-
 - Ricerca ricette per nome o ingrediente, scala porzioni ½×/1×/2× nel dettaglio
 - Condivisione lista via WhatsApp/altre app (Web Share)
-- Dark mode automatica, aggiunta vocale via Alexa/Siri (vedi `ALEXA.md`)
+- Dark mode automatica, aggiunta vocale via Alexa/Siri (vedi `ALEXA.md`) e, con Home Assistant a fare da ponte, anche dalla lista della spesa nativa di Alexa dettata in modo naturale (vedi `HOME_ASSISTANT.md`)
 - **Sincronizzazione robusta**: se due dispositivi scrivono la stessa chiave quasi in contemporanea, il Worker rifiuta la scrittura più vecchia (409) invece di sovrascrivere in silenzio; il client ricarica il dato remoto (per la lista spesa fa un merge automatico) e avvisa con un messaggio. Refresh completo al ritorno in foreground e aggiornamento periodico della lista spesa mentre è aperta, per fare la spesa in due senza pestarsi i piedi
 - Azioni distruttive (svuota dispensa, rimuovi comprati, disattiva sync, ripristina categorie, scala ingredienti "usato") mostrano un messaggio con **Annulla** invece di una finestra di conferma bloccante
